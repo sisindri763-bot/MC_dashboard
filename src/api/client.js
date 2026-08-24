@@ -58,4 +58,8 @@ export const fetchLogs = (params = {}) =>
 export const fetchRunDetail = (runId) =>
   api.get(`/api/runs/${runId}`).then((r) => r.data);
 
+// ── Convenience aliases ───────────────────────────────────────────────────────
+// Used by ObsOverview and other pages
+export const fetchHealth = fetchOverviewHealth;
+
 export default api;
