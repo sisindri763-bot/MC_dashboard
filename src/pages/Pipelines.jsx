@@ -107,12 +107,23 @@ export default function Pipelines() {
   const totalPipelines = pipelines.length;
   const successfulCount = pipelines.filter(p => (p.status ?? '').toLowerCase() === 'success').length;
   const failedCount = pipelines.filter(p => (p.status ?? '').toLowerCase() === 'failed').length;
-  const totalRuns = pipelines.reduce((sum, p) => sum + (p.total_runs ?? p.runs ?? 0), 0);
-  const overallSuccessRate = totalRuns > 0
-    ? (pipelines.reduce((sum, p) => sum + ((p.success_rate ?? 100) * (p.total_runs ?? p.runs ?? 1)), 0) / totalRuns).toFixed(1)
-    : '100.0';
+  const totalRuns = pipelines.reduce((sum, p) => sum + (Number(p.total_runs ?? p.runs ?? 0) || 0), 0);
+  
+  const overallSuccessRate = useMemo(() => {
+    if (!pipelines.length) return '100.0';
+    let weightedSum = 0;
+    let runsCount = 0;
+    pipelines.forEach(p => {
+      const runs = Number(p.total_runs ?? p.runs ?? 1) || 1;
+      const rate = p.success_rate != null ? parseFloat(p.success_rate) : ((p.status ?? '').toLowerCase() === 'success' ? 100 : 0);
+      weightedSum += rate * runs;
+      runsCount += runs;
+    });
+    return runsCount > 0 ? (weightedSum / runsCount).toFixed(1) : '100.0';
+  }, [pipelines]);
+
   const avgDurationSec = pipelines.length > 0
-    ? pipelines.reduce((sum, p) => sum + (p.avg_duration_seconds ?? 0), 0) / pipelines.length
+    ? pipelines.reduce((sum, p) => sum + (Number(p.avg_duration_seconds) || 0), 0) / pipelines.length
     : 12;
 
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
