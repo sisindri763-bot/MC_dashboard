@@ -13,7 +13,6 @@ const NAV_ITEMS = [
   {
     icon: Database, label: 'Data Observability', to: '/observability',
     children: [
-      { label: 'Overview', to: '/observability' },
       { label: 'Freshness', to: '/observability/freshness' },
       { label: 'Volume', to: '/observability/volume' },
       { label: 'Data Quality', to: '/observability/data-quality' },
@@ -34,13 +33,11 @@ export default function Sidebar() {
   const location = useLocation();
   const { isDark, toggleTheme } = useTheme();
 
-  const isPipelines = location.pathname.startsWith('/pipelines');
-
   return (
     <aside className="sidebar">
-      {/* Brand Logo */}
+      {/* Brand Logo (Green polygon as in screenshots) */}
       <div className="sidebar-logo">
-        <div className={`sidebar-logo-icon ${isPipelines ? 'emerald' : ''}`}>
+        <div className="sidebar-logo-icon">
           <Database size={16} color="#FFFFFF" />
         </div>
         <div className="sidebar-logo-text">
@@ -73,7 +70,6 @@ export default function Sidebar() {
                         <li key={child.label}>
                           <NavLink
                             to={child.to}
-                            end={child.to === '/observability'}
                             className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
                           >
                             {child.label}
@@ -86,16 +82,12 @@ export default function Sidebar() {
               );
             }
 
-            const isEmeraldActive = isPipelines && item.to === '/pipelines';
-
             return (
               <li key={item.label} className="nav-item">
                 <NavLink
                   to={item.to}
                   end={item.to === '/'}
-                  className={({ isActive }) =>
-                    'nav-link' + (isActive ? (isEmeraldActive ? ' active emerald' : ' active') : '')
-                  }
+                  className={({ isActive }) => 'nav-link' + (isActive ? ' active' : '')}
                 >
                   <Icon size={16} />
                   <span>{item.label}</span>
@@ -116,11 +108,11 @@ export default function Sidebar() {
           </div>
         </div>
 
-        {/* Dark Mode interactive Switch */}
+        {/* Dark Mode Switch */}
         <div className="dark-mode-toggle">
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <Moon size={13} />
-            <span>Dark Mode</span>
+            <span>Dark mode</span>
           </div>
           <div
             className={`toggle-switch ${isDark ? 'on' : ''}`}
