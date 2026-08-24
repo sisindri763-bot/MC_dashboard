@@ -3,10 +3,10 @@ import { createContext, useContext, useState, useEffect } from 'react';
 const ThemeContext = createContext();
 
 export function ThemeProvider({ children }) {
-  // Default to light theme as in the screenshots
+  // Strict Default to light theme as in user screenshots
   const [isDark, setIsDark] = useState(() => {
     const saved = localStorage.getItem('vithi_theme');
-    return saved ? saved === 'dark' : false;
+    return saved === 'dark';
   });
 
   useEffect(() => {
