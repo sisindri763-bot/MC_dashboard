@@ -43,11 +43,11 @@ export default function Lineage() {
     loadData();
   }, []);
 
-  const totalNodes = lineageData?.total_nodes ?? 15;
-  const totalEdges = lineageData?.total_edges ?? 18;
-  const healthyCount = useMemo(() => pipelines.filter(p => (p.status || '').toLowerCase() === 'success').length || 4, [pipelines]);
-  const failedCount = useMemo(() => pipelines.filter(p => (p.status || '').toLowerCase() === 'failed').length || 1, [pipelines]);
-  const sourceAssetsCount = useMemo(() => lineageData?.nodes?.filter(n => n.type === 'source_asset').length || 7, [lineageData]);
+  const totalNodes = lineageData?.total_nodes ?? (lineageData?.nodes?.length || 0);
+  const totalEdges = lineageData?.total_edges ?? (lineageData?.edges?.length || 0);
+  const healthyCount = useMemo(() => pipelines.filter(p => (p.status || '').toLowerCase() === 'success').length, [pipelines]);
+  const failedCount = useMemo(() => pipelines.filter(p => (p.status || '').toLowerCase() === 'failed').length, [pipelines]);
+  const sourceAssetsCount = useMemo(() => lineageData?.nodes?.filter(n => n.type === 'source_asset').length || 0, [lineageData]);
 
   // Filtered pipelines for display
   const filteredPipelines = useMemo(() => {

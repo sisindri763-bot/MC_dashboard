@@ -78,7 +78,7 @@ export default function Pipelines() {
           source_tool: p.source_tool || 'snowflake',
           target_tool: p.target_tool || 'snowflake',
           etl_tool: p.etl_tool || 'dbt',
-          last_run_time: p.last_run_time || p.last_run || 'Aug 17, 2026 11:25 AM',
+          last_run_time: p.last_run_time || p.last_run || (p.start_time ? new Date(p.start_time).toLocaleString() : 'recently'),
         });
       } else {
         const combinedRuns = existing.total_runs + runs;
@@ -148,7 +148,7 @@ export default function Pipelines() {
 
   const avgDurationSec = uniquePipelines.length > 0
     ? uniquePipelines.reduce((sum, p) => sum + (Number(p.avg_duration_seconds) || 0), 0) / uniquePipelines.length
-    : 11;
+    : 0;
 
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));

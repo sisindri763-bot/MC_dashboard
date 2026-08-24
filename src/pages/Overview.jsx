@@ -96,7 +96,7 @@ export default function Overview() {
           status: p.status !== 'N/A' && p.status ? p.status : (p.has_open_incident ? 'Failed' : 'Success'),
           runs: p.total_runs ?? p.runs ?? 1,
           successRate: p.success_rate != null && p.success_rate !== 'N/A' ? `${parseFloat(p.success_rate).toFixed(1)}%` : (p.has_open_incident ? '0.0%' : '100.0%'),
-          avgDuration: p.avg_duration_seconds ? `${Math.round(p.avg_duration_seconds)}s` : (p.avg_duration || '12s')
+          avgDuration: p.avg_duration_seconds ? `${Math.round(p.avg_duration_seconds)}s` : (p.avg_duration || '0s')
         })));
       }
     } catch (e) {
@@ -116,7 +116,7 @@ export default function Overview() {
       const names = new Set(pipelinesList.map(p => p.name).filter(Boolean));
       return names.size || pipelinesList.length;
     }
-    return kpiRaw?.totalPipelines?.value || 3;
+    return kpiRaw?.totalPipelines?.value || (kpiRaw?.kpis?.find(x => x.id === 'total_pipelines')?.value) || 0;
   }, [pipelinesList, kpiRaw]);
 
   // KPIs assembled directly from live API

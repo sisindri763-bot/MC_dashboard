@@ -47,7 +47,7 @@ export default function Logs() {
   const failedCount = useMemo(() => logs.filter(l => (l.status || '').toLowerCase() === 'failed').length, [logs]);
   const successCount = useMemo(() => logs.filter(l => (l.status || '').toLowerCase() === 'success').length, [logs]);
   const avgDuration = useMemo(() => {
-    if (!logs.length) return '12s';
+    if (!logs.length) return '0s';
     const sum = logs.reduce((acc, l) => acc + (Number(l.duration_seconds) || 0), 0);
     return `${(sum / logs.length).toFixed(1)}s`;
   }, [logs]);

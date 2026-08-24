@@ -1,5 +1,5 @@
 import { Calendar, RefreshCw, Download, ChevronDown } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 
 export default function PageHeader({ title, subtitle, onRefresh }) {
   const [env, setEnv] = useState('Production');
@@ -14,6 +14,14 @@ export default function PageHeader({ title, subtitle, onRefresh }) {
   const handleExport = () => {
     window.print();
   };
+
+  // Dynamic date range representing live data window
+  const dateRangeLabel = useMemo(() => {
+    const end = new Date();
+    const start = new Date(end.getTime() - 30 * 24 * 60 * 60 * 1000);
+    const fmt = (d) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    return `${fmt(start)} – ${fmt(end)}`;
+  }, []);
 
   return (
     <header className="page-header">
@@ -34,8 +42,8 @@ export default function PageHeader({ title, subtitle, onRefresh }) {
         </div>
 
         {/* Date Range Picker */}
-        <div className="header-btn" title="Filter by date range">
-          <span>May 11, 2024 12:00 AM – May 11, 2024 11:59 PM</span>
+        <div className="header-btn" title="Live date range filter">
+          <span>{dateRangeLabel}</span>
           <Calendar size={13} style={{ color: 'var(--text-secondary)' }} />
         </div>
 
