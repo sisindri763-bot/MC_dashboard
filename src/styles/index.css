@@ -128,6 +128,7 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 /* ── App Layout ─────────────────────────────────────────────────────────── */
 .app-layout {
   display: flex;
+  flex-direction: row;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
@@ -135,18 +136,24 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 }
 
 .main-content {
-  flex: 1;
+  flex: 1 1 0%;
+  min-width: 0;
+  height: 100vh;
   overflow-y: auto;
+  overflow-x: auto;
   display: flex;
   flex-direction: column;
-  min-width: 0;
   background-color: var(--bg-base);
+  position: relative;
 }
 
 /* ── Pure White / Light Sidebar ──────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
+  max-width: var(--sidebar-width);
+  flex: 0 0 var(--sidebar-width);
+  height: 100vh;
   background: var(--bg-sidebar) !important;
   border-right: 1px solid var(--border);
   display: flex;
@@ -154,6 +161,8 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   overflow-y: auto;
   overflow-x: hidden;
   user-select: none;
+  position: relative;
+  z-index: 10;
 }
 
 .sidebar-logo {
