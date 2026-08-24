@@ -7,38 +7,104 @@ import PageHeader from '../../components/PageHeader';
 import LoadingSpinner from '../../components/LoadingSpinner';
 import { fetchFreshness } from '../../api/client';
 
-const DEFAULT_FRESHNESS_ITEMS = [
-  { id: 1, name: 'orders_fact', updated: '2 min ago', sla: '15 min', lag: '2 min', lagStatus: 'good', status: 'Fresh', owner: 'DE', ownerName: 'Data Eng' },
-  { id: 2, name: 'user_events_stream', updated: '1 min ago', sla: '5 min', lag: '1 min', lagStatus: 'good', status: 'Fresh', owner: 'GR', ownerName: 'Growth' },
-  { id: 3, name: 'inventory_snapshot', updated: '42 min ago', sla: '30 min', lag: '12 min', lagStatus: 'warn', status: 'Delayed', owner: 'SU', ownerName: 'Supply' },
-  { id: 4, name: 'marketing_attribution', updated: '3 hr ago', sla: '1 hr', lag: '2 hr', lagStatus: 'bad', status: 'Stale', owner: 'MA', ownerName: 'Marketing' },
-  { id: 5, name: 'payments_ledger', updated: '4 min ago', sla: '10 min', lag: '4 min', lagStatus: 'good', status: 'Fresh', owner: 'FI', ownerName: 'Finance' },
-  { id: 6, name: 'support_tickets', updated: '58 min ago', sla: '1 hr', lag: '2 min', lagStatus: 'warn', status: 'Delayed', owner: 'CX', ownerName: 'CX' },
-  { id: 7, name: 'warehouse_ops', updated: '6 hr ago', sla: '2 hr', lag: '4 hr', lagStatus: 'bad', status: 'Stale', owner: 'SU', ownerName: 'Supply' },
-  { id: 8, name: 'session_rollups', updated: '3 min ago', sla: '15 min', lag: '3 min', lagStatus: 'good', status: 'Fresh', owner: 'GR', ownerName: 'Growth' },
-];
+function fmtTime(ts) {
+  if (!ts) return '—';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
+
+function fmtLag(mins) {
+  if (mins == null || mins === 0) return '0 min';
+  if (mins < 60) return `${Math.round(mins)} min`;
+  const hrs = Math.floor(mins / 60);
+  const remainingMins = Math.round(mins % 60);
+  if (hrs < 24) return `${hrs}h ${remainingMins}m`;
+  return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
+}
 
 export default function Freshness() {
+  const [data, setData] = useState([]);
+  const [summary, setSummary] = useState({
+    total_assets: 0,
+    fresh_count: 0,
+    delayed_count: 0,
+    stale_count: 0,
+    compliance_rate: '0.0%'
+  });
+  const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
-  const [pipelines, setPipelines] = useState(DEFAULT_FRESHNESS_ITEMS);
+
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetchFreshness({ sla_minutes: 60 });
+      if (res) {
+        const list = res.freshness_checks ?? (Array.isArray(res) ? res : res.datasets ?? []);
+        setData(list);
+        if (res.summary) {
+          setSummary(res.summary);
+        } else {
+          const fresh = list.filter(d => (d.status ?? d.freshness_status ?? '').toLowerCase() === 'fresh').length;
+          const delayed = list.filter(d => (d.status ?? d.freshness_status ?? '').toLowerCase() === 'delayed').length;
+          const stale = list.length - fresh - delayed;
+          setSummary({
+            total_assets: list.length,
+            fresh_count: fresh,
+            delayed_count: delayed,
+            stale_count: stale,
+            compliance_rate: list.length > 0 ? `${(fresh / list.length * 100).toFixed(1)}%` : '0.0%'
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load freshness data:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
 
   const filtered = useMemo(() => {
-    return pipelines.filter(p => p.name.toLowerCase().includes(search.toLowerCase()));
-  }, [pipelines, search]);
+    return data.filter(d => {
+      const name = d.dataset_id ?? d.pipeline_name ?? d.object_name ?? '';
+      const status = d.status ?? d.freshness_status ?? 'Stale';
+      const matchSearch = name.toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === 'All' || status.toLowerCase() === statusFilter.toLowerCase();
+      return matchSearch && matchStatus;
+    });
+  }, [data, search, statusFilter]);
 
-  const totalPipelines = 42;
+  const total = summary.total_assets || data.length;
+  const fresh = summary.fresh_count;
+  const delayed = summary.delayed_count;
+  const stale = summary.stale_count;
+
+  const freshPct = total > 0 ? Math.round(fresh / total * 100) : 0;
+  const delayedPct = total > 0 ? Math.round(delayed / total * 100) : 0;
+  const stalePct = total > 0 ? Math.round(stale / total * 100) : (total > 0 ? 100 : 0);
+
+  const avgLagMins = data.length > 0 ? data.reduce((s, d) => s + (d.lag_minutes ?? 0), 0) / data.length : 0;
+
+  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
 
   return (
     <div className="fade-in">
       <PageHeader
         title="Data Freshness"
         subtitle="Monitor how up-to-date your data is across all pipelines."
+        onRefresh={loadData}
       />
 
       <div className="page-body">
-        {/* Top 4 KPI Cards */}
+        {/* Top 4 KPI Cards (Live Real Backend Data) */}
         <div className="kpi-grid-4">
           <div className="kpi-card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -48,12 +114,12 @@ export default function Freshness() {
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Fresh</span>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#10B981' }}>81%</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#10B981' }}>{freshPct}%</span>
             </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>34</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{fresh}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Within SLA</div>
             <div className="progress-track" style={{ marginTop: 10, height: 4 }}>
-              <div className="progress-fill green" style={{ width: '81%' }} />
+              <div className="progress-fill green" style={{ width: `${freshPct}%` }} />
             </div>
           </div>
 
@@ -65,12 +131,12 @@ export default function Freshness() {
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Delayed</span>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>12%</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>{delayedPct}%</span>
             </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>5</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{delayed}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Outside SLA</div>
             <div className="progress-track" style={{ marginTop: 10, height: 4 }}>
-              <div className="progress-fill orange" style={{ width: '12%' }} />
+              <div className="progress-fill orange" style={{ width: `${delayedPct}%` }} />
             </div>
           </div>
 
@@ -82,12 +148,12 @@ export default function Freshness() {
                 </div>
                 <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Stale</span>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: '#EF4444' }}>7%</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: '#EF4444' }}>{stalePct}%</span>
             </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>3</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{stale}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>No recent updates</div>
             <div className="progress-track" style={{ marginTop: 10, height: 4 }}>
-              <div className="progress-fill red" style={{ width: '7%' }} />
+              <div className="progress-fill red" style={{ width: `${stalePct}%` }} />
             </div>
           </div>
 
@@ -98,96 +164,141 @@ export default function Freshness() {
               </div>
               <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Average Lag</span>
             </div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>14 min</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Across all pipelines</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{fmtLag(avgLagMins)}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Across all {total} monitored datasets</div>
           </div>
         </div>
 
         {/* Pipelines Table Card */}
         <div className="card mt-4">
           <div className="card-header">
-            <span className="card-title">Pipelines</span>
+            <span className="card-title">Monitored Datasets ({filtered.length})</span>
             <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <div className="search-box">
                 <Search size={13} />
                 <input
                   type="text"
-                  placeholder="Search pipelines..."
+                  placeholder="Search dataset or pipeline..."
                   value={search}
-                  onChange={e => setSearch(e.target.value)}
-                  style={{ width: 190, height: 30 }}
+                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  style={{ width: 220, height: 30 }}
                 />
               </div>
-              <button className="icon-btn" style={{ width: 30, height: 30 }}>
-                <Filter size={13} />
-              </button>
+              <select className="select-control" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
+                <option value="All">All Status</option>
+                <option value="Fresh">Fresh</option>
+                <option value="Delayed">Delayed</option>
+                <option value="Stale">Stale</option>
+              </select>
             </div>
           </div>
 
-          <div className="table-wrapper">
-            <table className="vithi-table">
-              <thead>
-                <tr>
-                  <th>Pipeline</th>
-                  <th>Last Updated</th>
-                  <th>SLA</th>
-                  <th>Current Lag</th>
-                  <th>Status</th>
-                  <th>Owner</th>
-                  <th style={{ textAlign: 'right' }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((p) => {
-                  const lagColor = p.lagStatus === 'good' ? '#10B981' : p.lagStatus === 'warn' ? '#F59E0B' : '#EF4444';
-                  return (
-                    <tr key={p.id}>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                          <Database size={15} color="#3B82F6" />
-                          <span style={{ fontWeight: 600 }}>{p.name}</span>
-                        </div>
-                      </td>
-                      <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{p.updated}</td>
-                      <td style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{p.sla}</td>
-                      <td style={{ fontSize: 12.5, fontWeight: 600, color: lagColor }}>{p.lag}</td>
-                      <td>
-                        <span className={`status-pill ${p.status.toLowerCase()}`}>
-                          {p.status}
-                        </span>
-                      </td>
-                      <td>
-                        <div className="owner-chip">
-                          <div className={`owner-circle ${p.owner.toLowerCase()}`}>{p.owner}</div>
-                          <span>{p.ownerName}</span>
-                        </div>
-                      </td>
-                      <td style={{ textAlign: 'right' }}>
-                        <button className="icon-btn" style={{ width: 28, height: 28 }}>
-                          <MoreVertical size={13} />
-                        </button>
+          {loading ? (
+            <LoadingSpinner />
+          ) : (
+            <div className="table-wrapper">
+              <table className="vithi-table">
+                <thead>
+                  <tr>
+                    <th>Dataset / Pipeline</th>
+                    <th>System</th>
+                    <th>Last Updated</th>
+                    <th>SLA Target</th>
+                    <th>Current Lag</th>
+                    <th>Status</th>
+                    <th>Owner</th>
+                    <th style={{ textAlign: 'right' }}></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {paginated.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
+                        No freshness datasets found.
                       </td>
                     </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-          </div>
+                  ) : (
+                    paginated.map((d, i) => {
+                      const name = d.dataset_id ?? d.pipeline_name ?? d.object_name ?? 'dataset';
+                      const status = (d.status ?? d.freshness_status ?? 'Stale').toLowerCase();
+                      const sla = d.sla_minutes ?? 60;
+                      const lag = d.lag_minutes ?? 0;
+                      const lagColor = lag <= sla ? '#10B981' : lag <= sla * 2 ? '#F59E0B' : '#EF4444';
+
+                      return (
+                        <tr key={d.asset_id ?? i}>
+                          <td>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <Database size={15} color="#3B82F6" />
+                              <div>
+                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 12.5 }}>
+                                  {name}
+                                </div>
+                                {d.pipeline_name && d.pipeline_name !== name && (
+                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                                    Pipeline: {d.pipeline_name}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                          <td style={{ color: 'var(--text-secondary)' }}>{d.system_name ?? 'Snowflake'}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{fmtTime(d.last_updated_at ?? d.observed_at)}</td>
+                          <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{sla} min</td>
+                          <td style={{ fontSize: 12.5, fontWeight: 600, color: lagColor }}>{fmtLag(lag)}</td>
+                          <td>
+                            <span className={`status-pill ${status}`}>
+                              {status.charAt(0).toUpperCase() + status.slice(1)}
+                            </span>
+                          </td>
+                          <td>
+                            <div className="owner-chip">
+                              <div className="owner-circle de">DE</div>
+                              <span>{d.owner ?? 'Data Eng'}</span>
+                            </div>
+                          </td>
+                          <td style={{ textAlign: 'right' }}>
+                            <button className="icon-btn" style={{ width: 28, height: 28 }}>
+                              <MoreVertical size={13} />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Pagination */}
           <div className="pagination-bar">
-            <span>Showing 1 to 8 of {totalPipelines} pipelines</span>
+            <span>Showing {Math.min((page - 1) * perPage + 1, filtered.length)} to {Math.min(page * perPage, filtered.length)} of {filtered.length} datasets</span>
             <div className="pagination-pages">
-              <button className="pagination-btn" disabled>‹</button>
-              <button className="pagination-btn active">1</button>
-              <button className="pagination-btn">2</button>
-              <button className="pagination-btn">3</button>
-              <span style={{ padding: '0 4px' }}>...</span>
-              <button className="pagination-btn">6</button>
-              <button className="pagination-btn">›</button>
-              <select className="select-control" style={{ marginLeft: 8, padding: '4px 8px' }}>
-                <option>10 / page</option>
-                <option>25 / page</option>
+              <button className="pagination-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>‹</button>
+              {Array.from({ length: Math.min(totalPages, 6) }, (_, i) => i + 1).map(p => (
+                <button
+                  key={p}
+                  className={`pagination-btn ${page === p ? 'active' : ''}`}
+                  onClick={() => setPage(p)}
+                >
+                  {p}
+                </button>
+              ))}
+              {totalPages > 6 && <span>...</span>}
+              {totalPages > 6 && (
+                <button
+                  className={`pagination-btn ${page === totalPages ? 'active' : ''}`}
+                  onClick={() => setPage(totalPages)}
+                >
+                  {totalPages}
+                </button>
+              )}
+              <button className="pagination-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>›</button>
+              <select className="select-control" style={{ marginLeft: 8, padding: '4px 8px' }} value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}>
+                <option value={10}>10 / page</option>
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
               </select>
             </div>
           </div>
@@ -195,7 +306,7 @@ export default function Freshness() {
           {/* Bottom Info Banner */}
           <div className="info-notice">
             <Info size={14} style={{ flexShrink: 0 }} />
-            <span>Freshness is calculated based on the time since the last successful update compared to the defined SLA for each pipeline.</span>
+            <span>Freshness SLA calculation uses the duration elapsed since last verified ingestion commit on live AWS RDS / Snowflake clusters.</span>
           </div>
         </div>
       </div>

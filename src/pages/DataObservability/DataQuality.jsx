@@ -18,144 +18,148 @@ const TOOLTIP_STYLE = {
   labelStyle: { color: '#64748B', fontWeight: 600 },
 };
 
-const DEFAULT_PIPELINES_QUALITY = [
-  { id: 1, name: 'orders_fact', score: 96, status: 'Good', checks: 210, failedChecks: '2 (1%)', lastCheck: '1 min ago', owner: 'DE', ownerName: 'Data Eng', trendColor: '#10B981' },
-  { id: 2, name: 'user_events_stream', score: 93, status: 'Good', checks: 180, failedChecks: '3 (2%)', lastCheck: '1 min ago', owner: 'GR', ownerName: 'Growth', trendColor: '#10B981' },
-  { id: 3, name: 'inventory_snapshot', score: 85, status: 'Warning', checks: 156, failedChecks: '12 (8%)', lastCheck: '5 min ago', owner: 'SU', ownerName: 'Supply', trendColor: '#F59E0B' },
-  { id: 4, name: 'payments_ledger', score: 91, status: 'Good', checks: 178, failedChecks: '5 (3%)', lastCheck: '2 min ago', owner: 'FI', ownerName: 'Finance', trendColor: '#10B981' },
-  { id: 5, name: 'marketing_attribution', score: 78, status: 'Poor', checks: 132, failedChecks: '18 (14%)', lastCheck: '6 min ago', owner: 'MA', ownerName: 'Marketing', trendColor: '#EF4444' },
-];
-
-const TIME_CHART_DATA = [
-  { time: '12 AM', score: 72 },
-  { time: '2 AM', score: 74 },
-  { time: '4 AM', score: 73 },
-  { time: '6 AM', score: 76 },
-  { time: '8 AM', score: 75 },
-  { time: '10 AM', score: 78 },
-  { time: '12 PM', score: 77 },
-  { time: '2 PM', score: 82 },
-  { time: '4 PM', score: 80 },
-  { time: '6 PM', score: 81 },
-  { time: '8 PM', score: 79 },
-];
-
-const DONUT_DATA = [
-  { name: 'Passed', value: 1592, color: '#10B981', pct: '92%' },
-  { name: 'Warning', value: 98, color: '#F59E0B', pct: '6%' },
-  { name: 'Failed', value: 40, color: '#EF4444', pct: '2%' },
-];
+function fmtTime(ts) {
+  if (!ts) return 'recently';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 export default function DataQuality() {
-  const [pipelineFilter, setPipelineFilter] = useState('All Pipelines');
-  const [domainFilter, setDomainFilter] = useState('All Domains');
-  const [ownerFilter, setOwnerFilter] = useState('All Owners');
+  const [data, setData] = useState([]);
+  const [summary, setSummary] = useState({ total_checks: 0, passed_checks: 0, failed_checks: 0, pass_rate: 0 });
+  const [loading, setLoading] = useState(true);
+
+  const [pipelineFilter, setPipelineFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [search, setSearch] = useState('');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(5);
-  const [loading, setLoading] = useState(false);
-  const [items, setItems] = useState(DEFAULT_PIPELINES_QUALITY);
 
-  const clearFilters = () => {
-    setPipelineFilter('All Pipelines');
-    setDomainFilter('All Domains');
-    setOwnerFilter('All Owners');
-    setPage(1);
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetchDataQuality();
+      if (res) {
+        const list = res.checks ?? (Array.isArray(res) ? res : res.results ?? []);
+        setData(list);
+        if (res.summary) {
+          setSummary(res.summary);
+        } else {
+          const passed = list.filter(c => (c.status ?? '').toLowerCase() === 'passed').length;
+          const failed = list.length - passed;
+          setSummary({
+            total_checks: list.length,
+            passed_checks: passed,
+            failed_checks: failed,
+            pass_rate: list.length > 0 ? Math.round((passed / list.length) * 100) : 0
+          });
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load quality checks:', e);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const filteredItems = useMemo(() => {
-    return items.filter(item => {
-      const matchOwner = ownerFilter === 'All Owners' || item.owner === ownerFilter;
-      return matchOwner;
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const totalChecks = summary.total_checks || data.length;
+  const passedChecks = summary.passed_checks;
+  const failedChecks = summary.failed_checks;
+  const passRate = summary.pass_rate ?? 0;
+  const warningChecks = Math.max(0, totalChecks - passedChecks - failedChecks);
+
+  const donutData = [
+    { name: 'Passed', value: passedChecks, color: '#10B981', pct: `${totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0}%` },
+    { name: 'Warning', value: warningChecks, color: '#F59E0B', pct: `${totalChecks > 0 ? Math.round((warningChecks / totalChecks) * 100) : 0}%` },
+    { name: 'Failed', value: failedChecks, color: '#EF4444', pct: `${totalChecks > 0 ? Math.round((failedChecks / totalChecks) * 100) : 100}%` },
+  ];
+
+  const timeData = useMemo(() => {
+    if (data.length === 0) {
+      return [{ time: 'Aug 17', score: passRate }];
+    }
+    return data.map((d, i) => ({
+      time: d.start_time ? new Date(d.start_time).toLocaleDateString([], { month: 'short', day: 'numeric' }) : `Check ${i+1}`,
+      score: (d.status ?? '').toLowerCase() === 'passed' ? 100 : 0
+    })).reverse();
+  }, [data, passRate]);
+
+  const filtered = useMemo(() => {
+    return data.filter(d => {
+      const pName = d.pipeline_name ?? '';
+      const qId = d.query_id ?? '';
+      const err = d.error_message ?? '';
+      const status = d.status ?? 'failed';
+
+      const matchSearch = pName.toLowerCase().includes(search.toLowerCase()) ||
+                          qId.toLowerCase().includes(search.toLowerCase()) ||
+                          err.toLowerCase().includes(search.toLowerCase());
+      const matchPipeline = pipelineFilter === 'All' || pName === pipelineFilter;
+      const matchStatus = statusFilter === 'All' || status.toLowerCase() === statusFilter.toLowerCase();
+
+      return matchSearch && matchPipeline && matchStatus;
     });
-  }, [items, ownerFilter]);
+  }, [data, search, pipelineFilter, statusFilter]);
+
+  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
 
   return (
     <div className="fade-in">
       <PageHeader
         title="Data Quality"
         subtitle="Real-time view of data quality across your pipelines."
+        onRefresh={loadData}
       />
 
       <div className="page-body">
-        {/* Top Filter Bar */}
-        <div className="filters-bar">
-          <div className="filter-select">
-            <label>Pipeline</label>
-            <select className="select-control" value={pipelineFilter} onChange={e => setPipelineFilter(e.target.value)}>
-              <option value="All Pipelines">All Pipelines</option>
-              <option value="orders_fact">orders_fact</option>
-              <option value="user_events_stream">user_events_stream</option>
-              <option value="inventory_snapshot">inventory_snapshot</option>
-            </select>
-          </div>
-
-          <div className="filter-select">
-            <label>Domain</label>
-            <select className="select-control" value={domainFilter} onChange={e => setDomainFilter(e.target.value)}>
-              <option value="All Domains">All Domains</option>
-              <option value="Sales">Sales</option>
-              <option value="Marketing">Marketing</option>
-              <option value="Finance">Finance</option>
-            </select>
-          </div>
-
-          <div className="filter-select">
-            <label>Owner</label>
-            <select className="select-control" value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
-              <option value="All Owners">All Owners</option>
-              <option value="DE">Data Eng (DE)</option>
-              <option value="GR">Growth (GR)</option>
-              <option value="SU">Supply (SU)</option>
-              <option value="FI">Finance (FI)</option>
-              <option value="MA">Marketing (MA)</option>
-            </select>
-          </div>
-
-          <button className="clear-filters-btn" style={{ marginLeft: 'auto' }} onClick={clearFilters}>
-            Clear filters ✕
-          </button>
-        </div>
-
-        {/* 5 KPI Cards */}
+        {/* Top 5 KPI Cards (Live Real Backend Data) */}
         <div className="kpi-grid-5">
           {/* Quality Status with Gauge */}
           <div className="kpi-card">
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Quality Status</div>
             <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 8 }}>
-              <div style={{ position: 'relative', width: 60, height: 60, flexShrink: 0 }}>
-                <PieChart width={60} height={60}>
+              <div style={{ position: 'relative', width: 56, height: 56, flexShrink: 0 }}>
+                <PieChart width={56} height={56}>
                   <Pie
-                    data={[{ value: 92 }, { value: 8 }]}
-                    cx={30} cy={30} innerRadius={20} outerRadius={28}
+                    data={[{ value: passRate }, { value: Math.max(0, 100 - passRate) }]}
+                    cx={28} cy={28} innerRadius={18} outerRadius={26}
                     startAngle={90} endAngle={-270} strokeWidth={0} dataKey="value"
                   >
-                    <Cell fill="#10B981" />
+                    <Cell fill={passRate > 80 ? '#10B981' : passRate > 50 ? '#F59E0B' : '#EF4444'} />
                     <Cell fill="#E2E8F0" />
                   </Pie>
                 </PieChart>
-                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 800, fontSize: 14 }}>
-                  92%
+                <div style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontWeight: 800, fontSize: 13 }}>
+                  {passRate}%
                 </div>
               </div>
               <div>
-                <div className="status-pill good" style={{ padding: '2px 8px', fontSize: 11 }}>Good</div>
-                <div style={{ fontSize: 11, color: '#10B981', fontWeight: 600, marginTop: 4 }}>
-                  ↑ 2% vs yesterday
+                <span className={`status-pill ${passRate > 80 ? 'good' : passRate > 50 ? 'warning' : 'critical'}`} style={{ padding: '2px 8px', fontSize: 11 }}>
+                  {passRate > 80 ? 'Good' : passRate > 50 ? 'Warning' : 'Critical'}
+                </span>
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 4 }}>
+                  {passedChecks}/{totalChecks} checks passed
                 </div>
               </div>
             </div>
-            <div className="sparkline-container" style={{ height: 26, marginTop: 4 }}>
-              <SparkLine color="#10B981" height={26} />
+            <div className="sparkline-container" style={{ height: 24, marginTop: 4 }}>
+              <SparkLine color={passRate > 50 ? '#10B981' : '#EF4444'} height={24} />
             </div>
           </div>
 
           {/* Checks Run */}
           <div className="kpi-card">
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Checks Run</div>
-            <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>1,730</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Last updated: 1 min ago</div>
-            <div className="sparkline-container" style={{ height: 26, marginTop: 6 }}>
-              <SparkLine color="#3B82F6" height={26} />
+            <div style={{ fontSize: 26, fontWeight: 800, color: 'var(--text-primary)', marginTop: 4 }}>{totalChecks}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Total test assertions</div>
+            <div className="sparkline-container" style={{ height: 24, marginTop: 6 }}>
+              <SparkLine color="#3B82F6" height={24} />
             </div>
           </div>
 
@@ -163,10 +167,10 @@ export default function DataQuality() {
           <div className="kpi-card">
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Passed</div>
             <div style={{ fontSize: 24, fontWeight: 800, color: '#10B981', marginTop: 4 }}>
-              1,592 <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>(92%)</span>
+              {passedChecks} <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>({totalChecks > 0 ? Math.round((passedChecks / totalChecks) * 100) : 0}%)</span>
             </div>
-            <div className="progress-track" style={{ marginTop: 12, height: 6 }}>
-              <div className="progress-fill green" style={{ width: '92%' }} />
+            <div className="progress-track" style={{ marginTop: 12, height: 5 }}>
+              <div className="progress-fill green" style={{ width: `${totalChecks > 0 ? (passedChecks / totalChecks) * 100 : 0}%` }} />
             </div>
           </div>
 
@@ -174,10 +178,10 @@ export default function DataQuality() {
           <div className="kpi-card">
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Warning</div>
             <div style={{ fontSize: 24, fontWeight: 800, color: '#F59E0B', marginTop: 4 }}>
-              98 <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>(6%)</span>
+              {warningChecks} <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>(0%)</span>
             </div>
-            <div className="progress-track" style={{ marginTop: 12, height: 6 }}>
-              <div className="progress-fill orange" style={{ width: '6%' }} />
+            <div className="progress-track" style={{ marginTop: 12, height: 5 }}>
+              <div className="progress-fill orange" style={{ width: '0%' }} />
             </div>
           </div>
 
@@ -185,10 +189,10 @@ export default function DataQuality() {
           <div className="kpi-card">
             <div style={{ fontSize: 12, fontWeight: 500, color: 'var(--text-secondary)' }}>Failed</div>
             <div style={{ fontSize: 24, fontWeight: 800, color: '#EF4444', marginTop: 4 }}>
-              40 <span style={{ fontSize: 14, fontWeight: 600, color: 'var(--text-secondary)' }}>(2%)</span>
+              {failedChecks} <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-secondary)' }}>({totalChecks > 0 ? Math.round((failedChecks / totalChecks) * 100) : 100}%)</span>
             </div>
-            <div className="progress-track" style={{ marginTop: 12, height: 6 }}>
-              <div className="progress-fill red" style={{ width: '2%' }} />
+            <div className="progress-track" style={{ marginTop: 12, height: 5 }}>
+              <div className="progress-fill red" style={{ width: `${totalChecks > 0 ? (failedChecks / totalChecks) * 100 : 100}%` }} />
             </div>
           </div>
         </div>
@@ -198,25 +202,21 @@ export default function DataQuality() {
           {/* Chart 1: Quality Score Over Time */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Quality Score Over Time ⓘ</span>
-              <select className="select-control" style={{ minWidth: 110 }}>
-                <option>Last 24 Hours</option>
-                <option>Last 7 Days</option>
-              </select>
+              <span className="card-title">Quality Pass Rate (%)</span>
             </div>
-            <ResponsiveContainer width="100%" height={190}>
-              <AreaChart data={TIME_CHART_DATA}>
+            <ResponsiveContainer width="100%" height={180}>
+              <AreaChart data={timeData}>
                 <defs>
-                  <linearGradient id="qGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#6366F1" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#6366F1" stopOpacity={0.0} />
+                  <linearGradient id="qGradLive" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor={passRate > 50 ? '#10B981' : '#EF4444'} stopOpacity={0.25} />
+                    <stop offset="95%" stopColor={passRate > 50 ? '#10B981' : '#EF4444'} stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
                 <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} formatter={v => [`${v}%`, 'Quality Score']} />
-                <Area type="monotone" dataKey="score" stroke="#6366F1" fill="url(#qGrad)" strokeWidth={2} dot={{ fill: '#6366F1', r: 3 }} />
+                <Tooltip {...TOOLTIP_STYLE} />
+                <Area type="monotone" dataKey="score" stroke={passRate > 50 ? '#10B981' : '#EF4444'} fill="url(#qGradLive)" strokeWidth={2} dot={{ r: 4 }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
@@ -224,36 +224,36 @@ export default function DataQuality() {
           {/* Chart 2: Checks by Status (Donut) */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Checks by Status ⓘ</span>
+              <span className="card-title">Checks by Status</span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', height: 190 }}>
-              <div style={{ position: 'relative', width: 170, height: 170 }}>
-                <PieChart width={170} height={170}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-around', height: 180 }}>
+              <div style={{ position: 'relative', width: 150, height: 150 }}>
+                <PieChart width={150} height={150}>
                   <Pie
-                    data={DONUT_DATA}
-                    cx={85} cy={85} innerRadius={55} outerRadius={78}
+                    data={donutData}
+                    cx={75} cy={75} innerRadius={48} outerRadius={68}
                     startAngle={90} endAngle={-270} strokeWidth={0} dataKey="value"
                   >
-                    {DONUT_DATA.map((entry, index) => (
+                    {donutData.map((entry, index) => (
                       <Cell key={index} fill={entry.color} />
                     ))}
                   </Pie>
                 </PieChart>
                 <div className="donut-center-label">
-                  <div className="big">1,730</div>
+                  <div className="big">{totalChecks}</div>
                   <div className="small">Total Checks</div>
                 </div>
               </div>
 
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                {DONUT_DATA.map((d) => (
-                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 24 }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                {donutData.map((d) => (
+                  <div key={d.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 20 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span style={{ width: 10, height: 10, borderRadius: '50%', background: d.color }} />
-                      <span style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>{d.name}</span>
+                      <span style={{ width: 9, height: 9, borderRadius: '50%', background: d.color }} />
+                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{d.name}</span>
                     </div>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--text-primary)' }}>
-                      {d.value.toLocaleString()} ({d.pct})
+                    <span style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {d.value} ({d.pct})
                     </span>
                   </div>
                 ))}
@@ -262,86 +262,99 @@ export default function DataQuality() {
           </div>
         </div>
 
-        {/* Table: Top Pipelines by Quality Score */}
+        {/* Quality Checks Table */}
         <div className="card mt-4">
           <div className="card-header">
-            <span className="card-title">Top Pipelines by Quality Score</span>
+            <span className="card-title">Quality Checks Execution Log ({filtered.length})</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div className="search-box">
+                <Search size={13} />
+                <input
+                  type="text"
+                  placeholder="Search error or pipeline..."
+                  value={search}
+                  onChange={e => { setSearch(e.target.value); setPage(1); }}
+                  style={{ width: 220, height: 30 }}
+                />
+              </div>
+            </div>
           </div>
 
-          <div className="table-wrapper">
-            <table className="vithi-table">
-              <thead>
-                <tr>
-                  <th>Pipeline</th>
-                  <th>Quality Score</th>
-                  <th>Status</th>
-                  <th>Checks Run</th>
-                  <th>Failed Checks</th>
-                  <th>Last Check</th>
-                  <th>Trend (24h)</th>
-                  <th>Owner</th>
-                  <th style={{ textAlign: 'right' }}></th>
-                </tr>
-              </thead>
-              <tbody>
-                {filteredItems.map((p) => (
-                  <tr key={p.id}>
-                    <td>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <Database size={15} color="#3B82F6" />
-                        <span style={{ fontWeight: 600 }}>{p.name}</span>
-                      </div>
-                    </td>
-                    <td style={{ fontWeight: 700, color: p.score >= 90 ? '#10B981' : p.score >= 80 ? '#F59E0B' : '#EF4444' }}>
-                      {p.score}%
-                    </td>
-                    <td>
-                      <span className={`status-pill ${p.status.toLowerCase()}`}>
-                        {p.status}
-                      </span>
-                    </td>
-                    <td>{p.checks}</td>
-                    <td style={{ color: p.failedChecks.startsWith('0') ? 'inherit' : '#EF4444', fontWeight: 600 }}>
-                      {p.failedChecks}
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{p.lastCheck}</td>
-                    <td style={{ width: 90 }}>
-                      <div style={{ width: 75, height: 22 }}>
-                        <SparkLine color={p.trendColor} height={20} />
-                      </div>
-                    </td>
-                    <td>
-                      <div className="owner-chip">
-                        <div className={`owner-circle ${p.owner.toLowerCase()}`}>{p.owner}</div>
-                        <span>{p.ownerName}</span>
-                      </div>
-                    </td>
-                    <td style={{ textAlign: 'right' }}>
-                      <button className="icon-btn" style={{ width: 28, height: 28 }}>
-                        <MoreVertical size={13} />
-                      </button>
-                    </td>
+          {loading ? (
+            <LoadingSpinner />
+          ) : (
+            <div className="table-wrapper">
+              <table className="vithi-table">
+                <thead>
+                  <tr>
+                    <th>Pipeline</th>
+                    <th>Query ID</th>
+                    <th>Error Message / SQL Trace</th>
+                    <th>Status</th>
+                    <th>Timestamp</th>
+                    <th style={{ textAlign: 'right' }}></th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {paginated.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
+                        No data quality logs found.
+                      </td>
+                    </tr>
+                  ) : (
+                    paginated.map((c, i) => (
+                      <tr key={c.id ?? i}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <Database size={15} color="#3B82F6" />
+                            <span style={{ fontWeight: 600 }}>{c.pipeline_name ?? 'hr_etl'}</span>
+                          </div>
+                        </td>
+                        <td>
+                          <span style={{ fontFamily: 'monospace', fontSize: 11, background: 'var(--bg-card-subtle)', padding: '2px 6px', borderRadius: 4 }}>
+                            {c.query_id ? c.query_id.slice(0, 18) + '...' : '—'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 320, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {c.error_message ?? 'Check passed with 0 validation errors'}
+                        </td>
+                        <td>
+                          <span className={`status-pill ${c.status === 'passed' ? 'good' : 'critical'}`}>
+                            {c.status ?? 'failed'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {fmtTime(c.start_time)}
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <button className="icon-btn" style={{ width: 28, height: 28 }}>
+                            <MoreVertical size={13} />
+                          </button>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
 
           {/* Pagination */}
           <div className="pagination-bar">
-            <span>Showing 1 to 5 of 42 pipelines</span>
+            <span>Showing {Math.min((page - 1) * perPage + 1, filtered.length)} to {Math.min(page * perPage, filtered.length)} of {filtered.length} checks</span>
             <div className="pagination-pages">
-              <button className="pagination-btn" disabled>‹</button>
-              <button className="pagination-btn active">1</button>
-              <button className="pagination-btn">2</button>
-              <button className="pagination-btn">3</button>
-              <span style={{ padding: '0 4px' }}>...</span>
-              <button className="pagination-btn">9</button>
-              <button className="pagination-btn">›</button>
-              <select className="select-control" style={{ marginLeft: 8, padding: '4px 8px' }}>
-                <option>5 / page</option>
-                <option>10 / page</option>
-              </select>
+              <button className="pagination-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>‹</button>
+              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
+                <button
+                  key={p}
+                  className={`pagination-btn ${page === p ? 'active' : ''}`}
+                  onClick={() => setPage(p)}
+                >
+                  {p}
+                </button>
+              ))}
+              <button className="pagination-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>›</button>
             </div>
           </div>
         </div>

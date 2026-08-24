@@ -1,74 +1,106 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { AlertTriangle, AlertCircle, Info, Search, Filter, MoreVertical, ArrowUpRight } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import LoadingSpinner from '../components/LoadingSpinner';
+import { fetchRecentIncidents } from '../api/client';
 
-const ALL_INCIDENTS = [
-  { id: 1, title: 'Freshness issue in sales_daily_summary', pipeline: 'Sales_Daily', error: 'Table not updated in expected time window (lag > 2hr)', severity: 'Critical', status: 'Open', time: '10m ago', blast: '5 downstream dashboards' },
-  { id: 2, title: 'Volume drop in marketing_campaign_performance', pipeline: 'Marketing_Events', error: 'Row count dropped by 62% vs 7-day average', severity: 'High', status: 'Open', time: '20m ago', blast: '3 ML models' },
-  { id: 3, title: 'Data quality issue in finance.transactions', pipeline: 'Payments_Processing', error: 'Null values in amount column > 5%', severity: 'Medium', status: 'Investigating', time: '35m ago', blast: 'Executive Financial Summary' },
-  { id: 4, title: 'Schema change detected in customer_profiles', pipeline: 'Customer_Sync', error: 'New column \'customer_tier\' added to table schema', severity: 'Low', status: 'Resolved', time: '1h ago', blast: 'None' },
-  { id: 5, title: 'Pipeline failure in inventory_snapshot', pipeline: 'Inventory_Update', error: 'Snowflake connection timeout error 504', severity: 'Low', status: 'Resolved', time: '2h ago', blast: 'Inventory Ops' },
-];
+function fmtTime(ts) {
+  if (!ts) return 'recently';
+  const d = new Date(ts);
+  if (isNaN(d.getTime())) return ts;
+  return d.toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 export default function Incidents() {
-  const [incidents, setIncidents] = useState(ALL_INCIDENTS);
+  const [incidents, setIncidents] = useState([]);
+  const [openCount, setOpenCount] = useState(1);
+  const [resolvedCount, setResolvedCount] = useState(1);
+  const [loading, setLoading] = useState(true);
+
   const [search, setSearch] = useState('');
   const [sevFilter, setSevFilter] = useState('All');
 
-  const filtered = incidents.filter(inc => {
-    const matchSearch = inc.title.toLowerCase().includes(search.toLowerCase()) || inc.pipeline.toLowerCase().includes(search.toLowerCase());
-    const matchSev = sevFilter === 'All' || inc.severity === sevFilter;
-    return matchSearch && matchSev;
-  });
+  const loadData = async () => {
+    setLoading(true);
+    try {
+      const res = await fetchRecentIncidents();
+      if (res && res.incidents) {
+        setIncidents(res.incidents);
+        setOpenCount(res.open_incidents ?? res.incidents.filter(i => i.state === 'OPEN').length);
+        setResolvedCount(res.resolved_incidents ?? res.incidents.filter(i => i.state === 'RESOLVED').length);
+      }
+    } catch (e) {
+      console.error('Failed to load incidents:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
-  const openCount = incidents.filter(i => i.status === 'Open').length;
-  const criticalCount = incidents.filter(i => i.severity === 'Critical' || i.severity === 'High').length;
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const filtered = useMemo(() => {
+    return incidents.filter(inc => {
+      const title = inc.title ?? inc.pipeline_name ?? '';
+      const desc = inc.description ?? '';
+      const pName = inc.pipeline_name ?? '';
+      const sev = inc.severity ?? 'Critical';
+
+      const matchSearch = title.toLowerCase().includes(search.toLowerCase()) ||
+                          desc.toLowerCase().includes(search.toLowerCase()) ||
+                          pName.toLowerCase().includes(search.toLowerCase());
+      const matchSev = sevFilter === 'All' || sev.toLowerCase() === sevFilter.toLowerCase();
+      return matchSearch && matchSev;
+    });
+  }, [incidents, search, sevFilter]);
 
   return (
     <div className="fade-in">
       <PageHeader
         title="Incidents"
         subtitle="Track and manage all data pipeline incidents."
+        onRefresh={loadData}
       />
 
       <div className="page-body">
-        {/* 4 Summary Cards */}
+        {/* Top 4 KPI Cards (Live Real Backend Data) */}
         <div className="kpi-grid-4">
           <div className="kpi-card">
-            <div className="kpi-label">Active Incidents</div>
+            <div className="kpi-label">Active Open Incidents</div>
             <div className="kpi-value" style={{ color: '#EF4444', marginTop: 4 }}>{openCount}</div>
             <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Requiring immediate attention</div>
           </div>
           <div className="kpi-card">
-            <div className="kpi-label">Critical & High Severity</div>
-            <div className="kpi-value" style={{ color: '#F59E0B', marginTop: 4 }}>{criticalCount}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Blocking downstream assets</div>
+            <div className="kpi-label">Critical Severity</div>
+            <div className="kpi-value" style={{ color: '#F59E0B', marginTop: 4 }}>{incidents.length}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Pipeline runtime aborts</div>
           </div>
           <div className="kpi-card">
-            <div className="kpi-label">Resolved Today</div>
-            <div className="kpi-value" style={{ color: '#10B981', marginTop: 4 }}>2</div>
-            <div style={{ fontSize: 11, color: '#10B981', fontWeight: 600, marginTop: 2 }}>Mean Time to Resolve: 18m</div>
+            <div className="kpi-label">Resolved Incidents</div>
+            <div className="kpi-value" style={{ color: '#10B981', marginTop: 4 }}>{resolvedCount}</div>
+            <div style={{ fontSize: 11, color: '#10B981', fontWeight: 600, marginTop: 2 }}>Successfully recovered</div>
           </div>
           <div className="kpi-card">
-            <div className="kpi-label">Total Incidents (30d)</div>
-            <div className="kpi-value" style={{ color: '#6366F1', marginTop: 4 }}>12</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>↓ 4 vs previous period</div>
+            <div className="kpi-label">Total Logged Incidents</div>
+            <div className="kpi-value" style={{ color: '#6366F1', marginTop: 4 }}>{incidents.length}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Across all historical runs</div>
           </div>
         </div>
 
         {/* Incidents Table Card */}
         <div className="card mt-4">
           <div className="card-header">
-            <span className="card-title">All Incidents</span>
+            <span className="card-title">Live Pipeline Incidents ({filtered.length})</span>
             <div style={{ display: 'flex', gap: 8 }}>
               <div className="search-box">
                 <Search size={13} />
                 <input
                   type="text"
-                  placeholder="Search incidents..."
+                  placeholder="Search error or pipeline..."
                   value={search}
                   onChange={e => setSearch(e.target.value)}
-                  style={{ width: 180, height: 30 }}
+                  style={{ width: 220, height: 30 }}
                 />
               </div>
               <select className="select-control" value={sevFilter} onChange={e => setSevFilter(e.target.value)}>
@@ -81,44 +113,63 @@ export default function Incidents() {
             </div>
           </div>
 
-          <div className="table-wrapper">
-            <table className="vithi-table">
-              <thead>
-                <tr>
-                  <th>Incident</th>
-                  <th>Pipeline</th>
-                  <th>Error Description</th>
-                  <th>Severity</th>
-                  <th>Status</th>
-                  <th>Blast Radius</th>
-                  <th>Detected At</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map(inc => (
-                  <tr key={inc.id}>
-                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inc.title}</td>
-                    <td style={{ color: 'var(--text-secondary)' }}>{inc.pipeline}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {inc.error}
-                    </td>
-                    <td>
-                      <span className={`status-pill ${inc.severity.toLowerCase()}`}>
-                        {inc.severity}
-                      </span>
-                    </td>
-                    <td>
-                      <span className={`status-pill ${inc.status.toLowerCase()}`}>
-                        {inc.status}
-                      </span>
-                    </td>
-                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inc.blast}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{inc.time}</td>
+          {loading ? (
+            <LoadingSpinner />
+          ) : (
+            <div className="table-wrapper">
+              <table className="vithi-table">
+                <thead>
+                  <tr>
+                    <th>Incident</th>
+                    <th>Pipeline</th>
+                    <th>Error Details / Trace</th>
+                    <th>Severity</th>
+                    <th>State</th>
+                    <th>Timestamp</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody>
+                  {filtered.length === 0 ? (
+                    <tr>
+                      <td colSpan={6} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
+                        No incidents match your search.
+                      </td>
+                    </tr>
+                  ) : (
+                    filtered.map(inc => (
+                      <tr key={inc.id}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <AlertTriangle size={15} color="#EF4444" />
+                            <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                              {inc.title ?? `${inc.pipeline_name} failure`}
+                            </span>
+                          </div>
+                        </td>
+                        <td style={{ color: 'var(--text-secondary)', fontWeight: 500 }}>{inc.pipeline_name}</td>
+                        <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 300, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                          {inc.description ?? 'Database execution failure'}
+                        </td>
+                        <td>
+                          <span className="status-pill critical">
+                            {inc.severity ?? 'Critical'}
+                          </span>
+                        </td>
+                        <td>
+                          <span className={`status-pill ${inc.state === 'OPEN' ? 'warning' : 'good'}`}>
+                            {inc.state ?? 'OPEN'}
+                          </span>
+                        </td>
+                        <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                          {fmtTime(inc.start_time ?? inc.created_at)}
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       </div>
     </div>
