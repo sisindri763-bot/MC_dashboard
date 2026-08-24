@@ -1,7 +1,7 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
 
-/* ── Light / White & Green Theme (Matches User Screenshots Exactly) ──────── */
-:root, html.light {
+/* ── Light / White & Green Theme (Default & Primary) ─────────────────────── */
+:root {
   --bg-base: #F8FAFC;
   --bg-sidebar: #FFFFFF;
   --bg-sidebar-hover: #F1F5F9;
@@ -20,7 +20,7 @@
   --sidebar-text-active: #047857;
   --sidebar-bg-active: #ECFDF5;
 
-  /* Primary Emerald / Green Theme */
+  /* Primary Green / Emerald Theme */
   --brand: #10B981;
   --brand-dark: #059669;
   --brand-light: #34D399;
@@ -63,7 +63,7 @@
   --sidebar-width: 220px;
 }
 
-/* ── Dark Theme (Toggleable) ─────────────────────────────────────────────── */
+/* ── Dark Theme Support ─────────────────────────────────────────────────── */
 html.dark {
   --bg-base: #0B0E1B;
   --bg-sidebar: #0F1326;
@@ -83,29 +83,17 @@ html.dark {
   --sidebar-text-active: #34D399;
   --sidebar-bg-active: rgba(16, 185, 129, 0.15);
 
-  --brand: #10B981;
-  --brand-dark: #34D399;
-  --brand-light: #6EE7B7;
   --brand-dim: rgba(16, 185, 129, 0.15);
   --brand-border: rgba(16, 185, 129, 0.3);
-
-  --success: #10B981;
-  --success-dark: #34D399;
   --success-dim: rgba(16, 185, 129, 0.15);
   --success-border: rgba(16, 185, 129, 0.3);
   --success-text: #34D399;
-
-  --warning: #F59E0B;
   --warning-dim: rgba(245, 158, 11, 0.15);
   --warning-border: rgba(245, 158, 11, 0.3);
   --warning-text: #FBBF24;
-
-  --danger: #EF4444;
   --danger-dim: rgba(239, 68, 68, 0.15);
   --danger-border: rgba(239, 68, 68, 0.3);
   --danger-text: #F87171;
-
-  --info: #3B82F6;
   --info-dim: rgba(59, 130, 246, 0.15);
   --info-border: rgba(59, 130, 246, 0.3);
   --info-text: #60A5FA;
@@ -155,11 +143,11 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   background-color: var(--bg-base);
 }
 
-/* ── White / Light Sidebar (Matching User Screenshots) ───────────────────── */
+/* ── Pure White / Light Sidebar ──────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
-  background: var(--bg-sidebar);
+  background: var(--bg-sidebar) !important;
   border-right: 1px solid var(--border);
   display: flex;
   flex-direction: column;
@@ -238,7 +226,6 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   background: var(--bg-sidebar-hover);
 }
 
-/* Green Active Nav State (from Screenshots) */
 .nav-link.active {
   color: var(--sidebar-text-active);
   background: var(--sidebar-bg-active);
@@ -424,7 +411,6 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   cursor: pointer;
 }
 
-/* Green Export Button (Matches Screenshot) */
 .export-btn {
   display: inline-flex;
   align-items: center;
@@ -444,12 +430,6 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 .export-btn:hover {
   background: #047857;
   transform: translateY(-1px);
-}
-
-.export-btn.purple {
-  background: #5842F5;
-  border-color: #5842F5;
-  box-shadow: 0 2px 6px rgba(88, 66, 245, 0.25);
 }
 
 .live-indicator {
@@ -781,7 +761,7 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   background: rgba(16, 185, 129, 0.02);
 }
 
-/* ── Status Pills (Matches Screenshots) ──────────────────────────────────── */
+/* ── Status Pills ────────────────────────────────────────────────────────── */
 .status-pill {
   display: inline-flex;
   align-items: center;
