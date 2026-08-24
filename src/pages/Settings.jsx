@@ -1,25 +1,85 @@
+import { useState } from 'react';
+import { Settings as SettingsIcon, Sliders, Key, Bell, Users, Database, Globe, Check } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
-import { Settings as SettingsIcon } from 'lucide-react';
 
 export default function Settings() {
+  const [saved, setSaved] = useState(false);
+  const [apiUrl, setApiUrl] = useState('https://vithi-observability-dasboard.vercel.app');
+  const [slaTime, setSlaTime] = useState(60);
+
+  const handleSave = (e) => {
+    e.preventDefault();
+    setSaved(true);
+    setTimeout(() => setSaved(false), 2000);
+  };
+
   return (
     <div className="fade-in">
-      <PageHeader title="Settings" subtitle="Configure your VITHI observability platform." />
-      <div className="page-body" style={{ paddingTop: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-          {['General', 'Connections', 'Notifications', 'Team', 'API Keys', 'Billing'].map(s => (
-            <div key={s} className="card" style={{ cursor: 'pointer' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 8, background: 'rgba(108,99,255,0.12)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                  <SettingsIcon size={16} color="#8B84FF" />
-                </div>
-                <div>
-                  <div style={{ fontSize: 14, fontWeight: 600 }}>{s}</div>
-                  <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Configure {s.toLowerCase()} settings</div>
-                </div>
-              </div>
+      <PageHeader
+        title="Settings"
+        subtitle="Manage platform configuration, connections and workspace preferences."
+      />
+
+      <div className="page-body">
+        <div className="grid-2">
+          {/* General Configuration */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">General Platform Config</span>
             </div>
-          ))}
+            <form onSubmit={handleSave} style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div className="filter-select">
+                <label>Backend API Base URL</label>
+                <input
+                  type="text"
+                  className="search-box"
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+                  value={apiUrl}
+                  onChange={e => setApiUrl(e.target.value)}
+                />
+              </div>
+
+              <div className="filter-select">
+                <label>Default Freshness SLA (Minutes)</label>
+                <input
+                  type="number"
+                  style={{ width: '100%', padding: '8px 12px', borderRadius: 6, border: '1px solid var(--border)', background: 'var(--bg-input)', color: 'var(--text-primary)' }}
+                  value={slaTime}
+                  onChange={e => setSlaTime(Number(e.target.value))}
+                />
+              </div>
+
+              <button type="submit" className="export-btn" style={{ alignSelf: 'flex-start', marginTop: 4 }}>
+                {saved ? <Check size={14} /> : null}
+                <span>{saved ? 'Saved Successfully!' : 'Save Settings'}</span>
+              </button>
+            </form>
+          </div>
+
+          {/* Connected Integrations */}
+          <div className="card">
+            <div className="card-header">
+              <span className="card-title">Connected Integrations</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {[
+                { name: 'Snowflake Data Warehouse', status: 'Connected', desc: 'us-east-1 production account' },
+                { name: 'Google BigQuery', status: 'Connected', desc: 'vithi-analytics-prod project' },
+                { name: 'AWS RDS MySQL', status: 'Connected', desc: 'Production transactional cluster' },
+                { name: 'PostgreSQL Database', status: 'Connected', desc: 'Auth & core service databases' },
+              ].map((conn, idx) => (
+                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--bg-card-subtle)', borderRadius: 8 }}>
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>{conn.name}</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{conn.desc}</div>
+                  </div>
+                  <span className="status-pill good" style={{ fontSize: 10.5 }}>
+                    {conn.status}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       </div>
     </div>

@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { ThemeProvider } from './context/ThemeContext';
 import './styles/index.css';
 import Sidebar from './components/Sidebar';
 
@@ -18,29 +19,30 @@ import Settings from './pages/Settings';
 
 export default function App() {
   return (
-    <BrowserRouter>
-      <div className="app-layout">
-        <Sidebar />
-        <div className="main-content">
-          <Routes>
-            <Route path="/" element={<Overview />} />
-            <Route path="/pipelines" element={<Pipelines />} />
-            <Route path="/observability" element={<ObsOverview />} />
-            <Route path="/observability/freshness" element={<Freshness />} />
-            <Route path="/observability/volume" element={<Volume />} />
-            <Route path="/observability/data-quality" element={<DataQuality />} />
-            <Route path="/observability/schema" element={<Schema />} />
-            {/* Standalone Data Quality route from sidebar */}
-            <Route path="/data-quality" element={<DataQuality />} />
-            <Route path="/lineage" element={<Lineage />} />
-            <Route path="/incidents" element={<Incidents />} />
-            <Route path="/metrics" element={<Metrics />} />
-            <Route path="/alerts" element={<Alerts />} />
-            <Route path="/logs" element={<Logs />} />
-            <Route path="/settings" element={<Settings />} />
-          </Routes>
+    <ThemeProvider>
+      <BrowserRouter>
+        <div className="app-layout">
+          <Sidebar />
+          <main className="main-content">
+            <Routes>
+              <Route path="/" element={<Overview />} />
+              <Route path="/pipelines" element={<Pipelines />} />
+              <Route path="/observability" element={<ObsOverview />} />
+              <Route path="/observability/freshness" element={<Freshness />} />
+              <Route path="/observability/volume" element={<Volume />} />
+              <Route path="/observability/data-quality" element={<DataQuality />} />
+              <Route path="/observability/schema" element={<Schema />} />
+              <Route path="/data-quality" element={<DataQuality />} />
+              <Route path="/lineage" element={<Lineage />} />
+              <Route path="/incidents" element={<Incidents />} />
+              <Route path="/metrics" element={<Metrics />} />
+              <Route path="/alerts" element={<Alerts />} />
+              <Route path="/logs" element={<Logs />} />
+              <Route path="/settings" element={<Settings />} />
+            </Routes>
+          </main>
         </div>
-      </div>
-    </BrowserRouter>
+      </BrowserRouter>
+    </ThemeProvider>
   );
 }

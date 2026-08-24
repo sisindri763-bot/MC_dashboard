@@ -1,197 +1,284 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  Database, FileText, TrendingUp, Activity, Search, Filter,
+  MoreVertical, ArrowUpRight, ArrowDownRight, Calendar, Info
+} from 'lucide-react';
+import {
+  AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
 } from 'recharts';
-import { Database, FileText, Activity, Zap, MoreVertical, Search, Filter, Info } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import SparkLine from '../../components/SparkLine';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import { fetchVolume } from '../../api/client';
 
 const TOOLTIP_STYLE = {
-  contentStyle: { background: '#1E2130', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 },
-  itemStyle: { color: '#E8EAF6' },
-  labelStyle: { color: '#8B90A7' },
+  contentStyle: { background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' },
+  itemStyle: { color: '#0F172A' },
+  labelStyle: { color: '#64748B', fontWeight: 600 },
 };
 
-function fmtBytes(bytes) {
-  if (!bytes) return '—';
-  if (bytes > 1e12) return `${(bytes/1e12).toFixed(2)} TB`;
-  if (bytes > 1e9) return `${(bytes/1e9).toFixed(2)} GB`;
-  if (bytes > 1e6) return `${(bytes/1e6).toFixed(1)} MB`;
-  return `${bytes} B`;
-}
+const VOLUME_OVER_TIME = [
+  { time: '12 AM', gb: 310 },
+  { time: '2 AM', gb: 260 },
+  { time: '4 AM', gb: 330 },
+  { time: '6 AM', gb: 320 },
+  { time: '8 AM', gb: 440 },
+  { time: '10 AM', gb: 680 },
+  { time: '12 PM', gb: 520 },
+  { time: '2 PM', gb: 420 },
+  { time: '4 PM', gb: 490 },
+  { time: '6 PM', gb: 390 },
+  { time: '8 PM', gb: 450 },
+];
 
-function fmtRows(n) {
-  if (!n) return '—';
-  if (n > 1e9) return `${(n/1e9).toFixed(2)}B`;
-  if (n > 1e6) return `${(n/1e6).toFixed(1)}M`;
-  if (n > 1e3) return `${(n/1e3).toFixed(0)}K`;
-  return String(n);
-}
+const TOP_VOLUME_PIPELINES = [
+  { name: 'orders_fact', gb: 620, pct: 25 },
+  { name: 'user_events_stream', gb: 410, pct: 17 },
+  { name: 'inventory_snapshot', gb: 280, pct: 11 },
+  { name: 'payments_ledger', gb: 210, pct: 8 },
+  { name: 'marketing_attribution', gb: 120, pct: 5 },
+];
 
-function fmtTime(ts) {
-  if (!ts) return '—';
-  const diff = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
-  if (diff < 60) return `${diff}m ago`;
-  return `${Math.round(diff/60)}h ago`;
-}
-
-const ITEMS_PER_PAGE = 10;
+const DEFAULT_VOLUME_TABLE = [
+  { id: 1, name: 'orders_fact', dataReceived: '620 GB', change: '+14.7%', isUp: true, avgVol: '25.8 GB', updated: '2 min ago', owner: 'DE', ownerName: 'Data Eng' },
+  { id: 2, name: 'user_events_stream', dataReceived: '410 GB', change: '+9.1%', isUp: true, avgVol: '17.1 GB', updated: '1 min ago', owner: 'GR', ownerName: 'Growth' },
+  { id: 3, name: 'inventory_snapshot', dataReceived: '280 GB', change: '-5.3%', isUp: false, avgVol: '11.6 GB', updated: '42 min ago', owner: 'SU', ownerName: 'Supply' },
+  { id: 4, name: 'payments_ledger', dataReceived: '210 GB', change: '+6.8%', isUp: true, avgVol: '8.7 GB', updated: '4 min ago', owner: 'FI', ownerName: 'Finance' },
+  { id: 5, name: 'marketing_attribution', dataReceived: '120 GB', change: '-2.2%', isUp: false, avgVol: '5.0 GB', updated: '3 hr ago', owner: 'MA', ownerName: 'Marketing' },
+];
 
 export default function Volume() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  const [pipelineFilter, setPipelineFilter] = useState('All Pipelines');
+  const [domainFilter, setDomainFilter] = useState('All Domains');
+  const [ownerFilter, setOwnerFilter] = useState('All Owners');
+  const [groupBy, setGroupBy] = useState('1 hour');
+  const [search, setSearch] = useState('');
+  const [viewUnit, setViewUnit] = useState('GB');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetchVolume();
-        setData(Array.isArray(res) ? res : res?.datasets ?? res?.pipelines ?? []);
-      } catch(e) { console.error(e); }
-      finally { setLoading(false); }
-    })();
-  }, []);
-
-  if (loading) return <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}><LoadingSpinner /></div>;
-
-  const totalRows = data.reduce((s, d) => s + (d.total_rows_in ?? 0), 0);
-  const totalActive = data.filter(d => (d.status ?? '').toLowerCase() !== 'failed').length;
-
-  // Build time series from data (group by hour if timestamp available)
-  const timeChart = data.slice(0, 24).map((d, i) => ({
-    label: `${(i * 1)} AM`,
-    gb: Math.round((d.total_rows_in ?? 0) / 1e6 * 10) / 10,
-  })).reverse();
-
-  // Top pipelines by volume
-  const sorted = [...data].sort((a, b) => (b.total_rows_in ?? 0) - (a.total_rows_in ?? 0));
-  const topPipelines = sorted.slice(0, 5);
-  const maxVol = topPipelines[0]?.total_rows_in ?? 1;
-
-  const pageData = data.slice((page-1)*ITEMS_PER_PAGE, page*ITEMS_PER_PAGE);
-  const totalPages = Math.ceil(data.length / ITEMS_PER_PAGE);
+  const clearFilters = () => {
+    setPipelineFilter('All Pipelines');
+    setDomainFilter('All Domains');
+    setOwnerFilter('All Owners');
+    setGroupBy('1 hour');
+    setSearch('');
+  };
 
   return (
     <div className="fade-in">
-      <PageHeader title="Volume" subtitle="Track the amount of data flowing through your pipelines." />
+      <PageHeader
+        title="Volume"
+        subtitle="Track the amount of data flowing through your pipelines."
+      />
 
-      <div className="page-body" style={{ paddingTop: 16 }}>
-        {/* Filters */}
-        <div className="filters-row">
-          {[
-            { label: 'Date range', options: ['Last 24 Hours', 'Last 7 Days', 'Last 30 Days'] },
-            { label: 'Pipeline', options: ['All Pipelines', ...data.map(d => d.pipeline_name).filter(Boolean).slice(0,5)] },
-            { label: 'Domain', options: ['All Domains', 'Sales', 'Marketing', 'Finance', 'Operations'] },
-            { label: 'Owner', options: ['All Owners', 'Data Eng', 'Growth', 'Supply', 'Finance'] },
-            { label: 'Group by', options: ['1 hour', '6 hours', '1 day'] },
-          ].map((f) => (
-            <div key={f.label} className="filter-select">
-              <label>{f.label}</label>
-              <select className="select-input">
-                {f.options.map(o => <option key={o}>{o}</option>)}
-              </select>
+      <div className="page-body">
+        {/* Filters Bar */}
+        <div className="filters-bar">
+          <div className="filter-select">
+            <label>Date range</label>
+            <div className="header-btn" style={{ padding: '6px 10px', height: 32 }}>
+              <span>May 11, 2024 12:00 AM – May 11, 2024 11:59 PM</span>
+              <Calendar size={12} style={{ color: 'var(--text-secondary)' }} />
             </div>
-          ))}
-          <button className="clear-filters-btn">Clear filters ×</button>
+          </div>
+
+          <div className="filter-select">
+            <label>Pipeline</label>
+            <select className="select-control" value={pipelineFilter} onChange={e => setPipelineFilter(e.target.value)}>
+              <option value="All Pipelines">All Pipelines</option>
+              <option value="orders_fact">orders_fact</option>
+              <option value="user_events_stream">user_events_stream</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Domain</label>
+            <select className="select-control" value={domainFilter} onChange={e => setDomainFilter(e.target.value)}>
+              <option value="All Domains">All Domains</option>
+              <option value="Sales">Sales</option>
+              <option value="Marketing">Marketing</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Owner</label>
+            <select className="select-control" value={ownerFilter} onChange={e => setOwnerFilter(e.target.value)}>
+              <option value="All Owners">All Owners</option>
+              <option value="DE">Data Eng (DE)</option>
+              <option value="GR">Growth (GR)</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Group by</label>
+            <select className="select-control" value={groupBy} onChange={e => setGroupBy(e.target.value)}>
+              <option value="1 hour">1 hour</option>
+              <option value="6 hours">6 hours</option>
+              <option value="1 day">1 day</option>
+            </select>
+          </div>
+
+          <button className="clear-filters-btn" style={{ marginLeft: 'auto', marginTop: 14 }} onClick={clearFilters}>
+            Clear filters ✕
+          </button>
         </div>
 
-        {/* KPI Cards */}
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14, marginTop: 16 }}>
-          {[
-            { icon: Database, label: 'Data Received', value: fmtBytes(totalRows * 500), sub: `↑ 12.5% vs previous period\nAcross ${data.length} pipelines`, color: '#6C63FF', bg: 'rgba(108,99,255,0.12)' },
-            { icon: FileText, label: 'Records Received', value: fmtRows(totalRows), sub: `↑ 9.3% vs previous period\nAcross ${data.length} pipelines`, color: '#22C55E', bg: 'rgba(34,197,94,0.12)' },
-            { icon: Activity, label: 'Current Volume', value: fmtRows(Math.round(totalRows/24)), sub: '↑ 8.8% vs previous hour\nPer hour', color: '#F59E0B', bg: 'rgba(245,158,11,0.12)' },
-            { icon: Zap, label: 'Pipelines Active', value: `${totalActive} / ${data.length}`, sub: `${data.length > 0 ? Math.round(totalActive/data.length*100) : 0}% of pipelines\nNo change vs previous period`, color: '#3B82F6', bg: 'rgba(59,130,246,0.12)' },
-          ].map((c) => {
-            const Icon = c.icon;
-            return (
-              <div key={c.label} className="card">
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                  <div style={{ width: 38, height: 38, borderRadius: 8, background: c.bg, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                    <Icon size={18} color={c.color} />
-                  </div>
-                  <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{c.label}</span>
-                </div>
-                <div style={{ fontSize: 24, fontWeight: 800, color: 'var(--text-primary)' }}>{c.value}</div>
-                {c.sub.split('\n').map((s, i) => (
-                  <div key={i} style={{ fontSize: 11, color: i===0 ? '#22C55E' : 'var(--text-muted)', marginTop: i===0?6:2 }}>{s}</div>
-                ))}
+        {/* 4 KPI Cards */}
+        <div className="kpi-grid-4">
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#EFF6FF', color: '#3B82F6' }}>
+                <Database size={18} />
               </div>
-            );
-          })}
+              <span className="kpi-label">Data Received</span>
+            </div>
+            <div className="kpi-value">2.45 TB</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>↑ 12.5% vs previous period</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Across 42 pipelines</div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
+                <FileText size={18} />
+              </div>
+              <span className="kpi-label">Records Received</span>
+            </div>
+            <div className="kpi-value">2.1B</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>↑ 9.3% vs previous period</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Across 42 pipelines</div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
+                <TrendingUp size={18} />
+              </div>
+              <span className="kpi-label">Current Volume</span>
+            </div>
+            <div className="kpi-value">28.6M <span style={{ fontSize: 14, fontWeight: 500, color: 'var(--text-secondary)' }}>records</span></div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>↑ 8.8% vs previous hour</span>
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Per hour</div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#F5F3FF', color: '#8B5CF6' }}>
+                <Activity size={18} />
+              </div>
+              <span className="kpi-label">Pipelines Active</span>
+            </div>
+            <div className="kpi-value">38 / 42</div>
+            <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4, fontWeight: 500 }}>
+              90% of pipelines
+            </div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>No change vs previous period</div>
+          </div>
         </div>
 
-        {/* Charts */}
-        <div className="section-grid-2 mt-6">
-          {/* Area chart */}
+        {/* 2 Middle Charts */}
+        <div className="grid-2 mt-4">
+          {/* Chart 1: Data Received Over Time */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Data Received Over Time</span>
-              <div className="chart-filter-row">
-                <select className="time-select"><option>Line</option><option>Bar</option></select>
-                <select className="time-select"><option>1H</option><option>6H</option><option>1D</option></select>
+              <span className="card-title">Data Received Over Time ⓘ</span>
+              <div style={{ display: 'flex', gap: 6 }}>
+                <select className="select-control" style={{ minWidth: 70, padding: '3px 8px' }}>
+                  <option>Line</option>
+                  <option>Bar</option>
+                </select>
+                <select className="select-control" style={{ minWidth: 60, padding: '3px 8px' }}>
+                  <option>1H</option>
+                  <option>6H</option>
+                  <option>1D</option>
+                </select>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={220}>
-              <AreaChart data={timeChart}>
+            <ResponsiveContainer width="100%" height={190}>
+              <AreaChart data={VOLUME_OVER_TIME}>
                 <defs>
-                  <linearGradient id="volGrad" x1="0" y1="0" x2="0" y2="1">
+                  <linearGradient id="volBlue" x1="0" y1="0" x2="0" y2="1">
                     <stop offset="5%" stopColor="#3B82F6" stopOpacity={0.3} />
-                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0} />
+                    <stop offset="95%" stopColor="#3B82F6" stopOpacity={0.0} />
                   </linearGradient>
                 </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fill: '#8B90A7', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#8B90A7', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`${v} GB`, 'Data Received']} />
-                <Area type="monotone" dataKey="gb" stroke="#3B82F6" fill="url(#volGrad)" strokeWidth={2} dot={false} />
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 800]} tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} unit=" GB" />
+                <Tooltip {...TOOLTIP_STYLE} formatter={v => [`${v} GB`, 'Data Received']} />
+                <Area type="monotone" dataKey="gb" stroke="#3B82F6" fill="url(#volBlue)" strokeWidth={2} dot={{ fill: '#3B82F6', r: 3 }} />
               </AreaChart>
             </ResponsiveContainer>
           </div>
 
-          {/* Horizontal bars */}
+          {/* Chart 2: Data Received by Pipeline (Horizontal Bars) */}
           <div className="card">
             <div className="card-header">
-              <span className="card-title">Data Received by Pipeline</span>
-              <div style={{ display: 'flex', gap: 4 }}>
-                <button className="page-btn active" style={{ width: 'auto', padding: '3px 10px', fontSize: 11 }}>GB</button>
-                <button className="page-btn" style={{ width: 'auto', padding: '3px 10px', fontSize: 11 }}>%</button>
+              <span className="card-title">Data Received by Pipeline ⓘ</span>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                <button
+                  className={`pagination-btn ${viewUnit === 'GB' ? 'active' : ''}`}
+                  style={{ minWidth: 32, height: 24, fontSize: 11 }}
+                  onClick={() => setViewUnit('GB')}
+                >
+                  GB
+                </button>
+                <button
+                  className={`pagination-btn ${viewUnit === '%' ? 'active' : ''}`}
+                  style={{ minWidth: 32, height: 24, fontSize: 11 }}
+                  onClick={() => setViewUnit('%')}
+                >
+                  %
+                </button>
+                <button className="icon-btn" style={{ width: 24, height: 24 }}>
+                  <MoreVertical size={12} />
+                </button>
               </div>
             </div>
-            <div style={{ marginTop: 8 }}>
-              {topPipelines.map((p, i) => {
-                const pct = maxVol > 0 ? (p.total_rows_in ?? 0) / maxVol * 100 : 0;
-                const gb = ((p.total_rows_in ?? 0) * 500 / 1e9).toFixed(0);
-                return (
-                  <div key={i} className="vol-bar-row">
-                    <div className="vol-bar-label">{p.pipeline_name ?? '—'}</div>
-                    <div className="vol-bar-track">
-                      <div className="vol-bar-fill" style={{ width: `${pct}%` }} />
-                    </div>
-                    <div className="vol-bar-value">{gb} GB ({Math.round(pct)}%)</div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 10 }}>
+              {TOP_VOLUME_PIPELINES.map((p) => (
+                <div key={p.name} style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                  <div style={{ width: 140, fontSize: 12, fontWeight: 500, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                    {p.name}
                   </div>
-                );
-              })}
+                  <div style={{ flex: 1, height: 10, background: '#EFF6FF', borderRadius: 99, overflow: 'hidden' }}>
+                    <div style={{ width: `${p.pct * 3}%`, height: '100%', background: '#3B82F6', borderRadius: 99 }} />
+                  </div>
+                  <div style={{ width: 90, textAlign: 'right', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+                    {viewUnit === 'GB' ? `${p.gb} GB (${p.pct}%)` : `${p.pct}%`}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         </div>
 
-        {/* Pipelines Table */}
-        <div className="card mt-6">
+        {/* Bottom Pipelines Table */}
+        <div className="card mt-4">
           <div className="card-header">
-            <span className="card-title">Pipelines (Showing {(page-1)*ITEMS_PER_PAGE+1} to {Math.min(page*ITEMS_PER_PAGE, data.length)} of {data.length})</span>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <div className="search-wrap">
-                <Search size={13} />
-                <input className="search-input" placeholder="Search pipelines..." />
-              </div>
-              <button className="icon-btn"><Filter size={13} /></button>
+            <span className="card-title">Pipelines (Showing 1 to 5 of 42)</span>
+            <div className="search-box">
+              <Search size={13} />
+              <input
+                type="text"
+                placeholder="Search pipelines..."
+                value={search}
+                onChange={e => setSearch(e.target.value)}
+                style={{ width: 180, height: 30 }}
+              />
             </div>
           </div>
-          <div className="data-table-wrap">
-            <table className="data-table">
+
+          <div className="table-wrapper">
+            <table className="vithi-table">
               <thead>
                 <tr>
                   <th>Pipeline</th>
@@ -201,55 +288,69 @@ export default function Volume() {
                   <th>Trend (24h)</th>
                   <th>Last Updated</th>
                   <th>Owner</th>
-                  <th></th>
+                  <th style={{ textAlign: 'right' }}></th>
                 </tr>
               </thead>
               <tbody>
-                {pageData.map((p, i) => {
-                  const rows = p.total_rows_in ?? 0;
-                  const gb = (rows * 500 / 1e9).toFixed(0);
-                  const change = p.row_drop_pct ?? (Math.random() * 20 - 10);
-                  return (
-                    <tr key={i}>
-                      <td>
-                        <div className="pipeline-name-cell">
-                          <div className="pipeline-icon"><span style={{ fontSize: 9, fontWeight: 700 }}>DB</span></div>
-                          <span style={{ fontSize: 12, fontWeight: 500 }}>{p.pipeline_name ?? '—'}</span>
-                        </div>
-                      </td>
-                      <td style={{ fontSize: 12 }}>{gb} GB</td>
-                      <td style={{ fontSize: 12, color: change >= 0 ? '#22C55E' : '#EF4444', fontWeight: 600 }}>
-                        {change >= 0 ? '+' : ''}{change.toFixed(1)}%
-                      </td>
-                      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{(rows/24/1e6).toFixed(1)} GB</td>
-                      <td><div style={{ width: 80, height: 24 }}><SparkLine color="#3B82F6" height={24} /></div></td>
-                      <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtTime(p.last_updated_at)}</td>
-                      <td>
-                        <div className="owner-badge">
-                          <div className="owner-avatar">{(p.owner ?? 'DE').substring(0,2).toUpperCase()}</div>
-                          {p.owner ?? 'Data Eng'}
-                        </div>
-                      </td>
-                      <td><button className="dots-btn"><MoreVertical size={14} /></button></td>
-                    </tr>
-                  );
-                })}
+                {DEFAULT_VOLUME_TABLE.map((p) => (
+                  <tr key={p.id}>
+                    <td>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <Database size={15} color="#3B82F6" />
+                        <span style={{ fontWeight: 600 }}>{p.name}</span>
+                      </div>
+                    </td>
+                    <td style={{ fontWeight: 700 }}>{p.dataReceived}</td>
+                    <td style={{ color: p.isUp ? '#10B981' : '#EF4444', fontWeight: 600 }}>
+                      {p.isUp ? <ArrowUpRight size={12} style={{ display: 'inline', verticalAlign: 'middle' }} /> : <ArrowDownRight size={12} style={{ display: 'inline', verticalAlign: 'middle' }} />}
+                      {p.change}
+                    </td>
+                    <td style={{ fontSize: 12.5 }}>{p.avgVol}</td>
+                    <td style={{ width: 90 }}>
+                      <div style={{ width: 75, height: 22 }}>
+                        <SparkLine color="#3B82F6" height={20} />
+                      </div>
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{p.updated}</td>
+                    <td>
+                      <div className="owner-chip">
+                        <div className={`owner-circle ${p.owner.toLowerCase()}`}>{p.owner}</div>
+                        <span>{p.ownerName}</span>
+                      </div>
+                    </td>
+                    <td style={{ textAlign: 'right' }}>
+                      <button className="icon-btn" style={{ width: 28, height: 28 }}>
+                        <MoreVertical size={13} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
               </tbody>
             </table>
           </div>
-          <div className="pagination">
-            <span className="pagination-info">Showing {(page-1)*ITEMS_PER_PAGE+1} to {Math.min(page*ITEMS_PER_PAGE, data.length)} of {data.length}</span>
-            <div className="pagination-controls">
-              <button className="page-btn" disabled={page===1} onClick={() => setPage(p=>p-1)}>‹</button>
-              {Array.from({ length: Math.min(totalPages, 6) }, (_, i) => i+1).map(p => (
-                <button key={p} className={`page-btn ${p===page?'active':''}`} onClick={() => setPage(p)}>{p}</button>
-              ))}
-              <button className="page-btn" disabled={page===totalPages} onClick={() => setPage(p=>p+1)}>›</button>
+
+          {/* Pagination */}
+          <div className="pagination-bar">
+            <span>Showing 1 to 5 of 42 pipelines</span>
+            <div className="pagination-pages">
+              <button className="pagination-btn" disabled>‹</button>
+              <button className="pagination-btn active">1</button>
+              <button className="pagination-btn">2</button>
+              <button className="pagination-btn">3</button>
+              <span style={{ padding: '0 4px' }}>...</span>
+              <button className="pagination-btn">6</button>
+              <button className="pagination-btn">›</button>
+              <select className="select-control" style={{ marginLeft: 8, padding: '4px 8px' }}>
+                <option>10 / page</option>
+                <option>25 / page</option>
+              </select>
             </div>
           </div>
-          <div className="info-banner mt-4">
-            <Info size={14} color="#60A5FA" />
-            All volume metrics are shown in GB. 1 TB = 1024 GB.
+
+          {/* Notice info banner */}
+          <div className="info-notice">
+            <Info size={14} style={{ flexShrink: 0 }} />
+            <span>All volume metrics are shown in GB. 1 TB = 1024 GB.</span>
           </div>
         </div>
       </div>

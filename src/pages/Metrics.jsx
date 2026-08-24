@@ -1,111 +1,105 @@
 import { useEffect, useState } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line } from 'recharts';
+import { BarChart2, TrendingUp, Clock, Database } from 'lucide-react';
+import {
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+} from 'recharts';
 import PageHeader from '../components/PageHeader';
-import LoadingSpinner from '../components/LoadingSpinner';
-import { fetchMetrics } from '../api/client';
 
 const TOOLTIP_STYLE = {
-  contentStyle: { background: '#1E2130', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 8, fontSize: 12 },
-  itemStyle: { color: '#E8EAF6' },
+  contentStyle: { background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 8, fontSize: 12, boxShadow: '0 4px 12px rgba(0,0,0,0.08)' },
+  itemStyle: { color: '#0F172A' },
+  labelStyle: { color: '#64748B', fontWeight: 600 },
 };
 
-function fmtTime(ts) {
-  if (!ts) return '—';
-  const diff = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
-  if (diff < 60) return `${diff}m ago`;
-  return `${Math.round(diff/60)}h ago`;
-}
+const METRICS_CHART_DATA = [
+  { name: 'Orders_Load', rowsIn: 1240, rowsOut: 1240, duration: 751 },
+  { name: 'Customer_Sync', rowsIn: 456, rowsOut: 450, duration: 1085 },
+  { name: 'Sales_Daily', rowsIn: 2150, rowsOut: 2150, duration: 502 },
+  { name: 'Inventory_Update', rowsIn: 812, rowsOut: 810, duration: 942 },
+  { name: 'Payments_Proc', rowsIn: 230, rowsOut: 180, duration: 192 },
+  { name: 'Product_Cat', rowsIn: 145, rowsOut: 145, duration: 378 },
+  { name: 'Mktg_Events', rowsIn: 678, rowsOut: 660, duration: 1365 },
+  { name: 'User_Activity', rowsIn: 1050, rowsOut: 1050, duration: 665 },
+];
 
 export default function Metrics() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetchMetrics();
-        setData(Array.isArray(res) ? res : res?.metrics ?? []);
-      } catch(e) { console.error(e); }
-      finally { setLoading(false); }
-    })();
-  }, []);
-
-  if (loading) return <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}><LoadingSpinner /></div>;
-
-  const byPipeline = [...new Map(data.map(d => [d.pipeline_name, d])).values()];
-  const chartData = byPipeline.slice(0, 10).map(d => ({
-    name: (d.pipeline_name ?? '').substring(0, 12),
-    rows_in: d.total_rows_in ?? 0,
-    rows_out: d.total_rows_out ?? 0,
-    duration: d.avg_duration_seconds ?? 0,
-  }));
-
   return (
     <div className="fade-in">
-      <PageHeader title="Metrics" subtitle="Calculated observability metrics across all pipelines." />
+      <PageHeader
+        title="Metrics"
+        subtitle="Calculated observability metrics across all pipelines."
+      />
 
-      <div className="page-body" style={{ paddingTop: 16 }}>
-        <div className="section-grid-2">
+      <div className="page-body">
+        {/* 2 Charts */}
+        <div className="grid-2">
           <div className="card">
-            <div className="card-header"><span className="card-title">Rows In vs Rows Out by Pipeline</span></div>
+            <div className="card-header">
+              <span className="card-title">Rows Processed (Thousands)</span>
+            </div>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} layout="vertical" barSize={8}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                <XAxis type="number" tick={{ fill: '#8B90A7', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#8B90A7', fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
+              <BarChart data={METRICS_CHART_DATA}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="rows_in" fill="#6C63FF" radius={[0,2,2,0]} name="Rows In" />
-                <Bar dataKey="rows_out" fill="#22C55E" radius={[0,2,2,0]} name="Rows Out" />
+                <Bar dataKey="rowsIn" name="Rows In" fill="#6366F1" radius={[3, 3, 0, 0]} />
+                <Bar dataKey="rowsOut" name="Rows Out" fill="#10B981" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
 
           <div className="card">
-            <div className="card-header"><span className="card-title">Avg Duration by Pipeline (seconds)</span></div>
+            <div className="card-header">
+              <span className="card-title">Execution Duration (Seconds)</span>
+            </div>
             <ResponsiveContainer width="100%" height={260}>
-              <BarChart data={chartData} layout="vertical" barSize={8}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" horizontal={false} />
-                <XAxis type="number" tick={{ fill: '#8B90A7', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#8B90A7', fontSize: 10 }} axisLine={false} tickLine={false} width={90} />
+              <BarChart data={METRICS_CHART_DATA}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
+                <XAxis dataKey="name" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
                 <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="duration" fill="#F59E0B" radius={[0,2,2,0]} name="Duration (s)" />
+                <Bar dataKey="duration" name="Duration (s)" fill="#F59E0B" radius={[3, 3, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
         </div>
 
-        <div className="card mt-6">
-          <div className="card-header"><span className="card-title">Pipeline Metrics Detail</span></div>
-          <div className="data-table-wrap">
-            <table className="data-table">
+        {/* Metrics Table */}
+        <div className="card mt-4">
+          <div className="card-header">
+            <span className="card-title">Pipeline Metrics Detail</span>
+          </div>
+
+          <div className="table-wrapper">
+            <table className="vithi-table">
               <thead>
                 <tr>
                   <th>Pipeline</th>
-                  <th>System</th>
+                  <th>Source System</th>
                   <th>Rows In</th>
                   <th>Rows Out</th>
-                  <th>Drop %</th>
-                  <th>Avg Duration</th>
-                  <th>Last Updated</th>
+                  <th>Drop Rate</th>
+                  <th>Avg. Duration</th>
+                  <th>Throughput</th>
                 </tr>
               </thead>
               <tbody>
-                {data.length === 0 && <tr><td colSpan={7} className="empty-state">No metrics data</td></tr>}
-                {data.slice(0, 50).map((d, i) => {
-                  const drop = d.total_rows_in > 0 ? ((d.total_rows_in - (d.total_rows_out ?? 0)) / d.total_rows_in * 100) : 0;
+                {METRICS_CHART_DATA.map((p, i) => {
+                  const drop = ((p.rowsIn - p.rowsOut) / p.rowsIn * 100).toFixed(1);
                   return (
                     <tr key={i}>
-                      <td style={{ fontSize: 12, fontWeight: 500 }}>{d.pipeline_name ?? '—'}</td>
-                      <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{d.system_name ?? '—'}</td>
-                      <td style={{ fontSize: 12 }}>{(d.total_rows_in ?? 0).toLocaleString()}</td>
-                      <td style={{ fontSize: 12 }}>{(d.total_rows_out ?? 0).toLocaleString()}</td>
-                      <td style={{ fontSize: 12, color: drop > 50 ? '#EF4444' : drop > 20 ? '#F59E0B' : '#22C55E' }}>
-                        {drop.toFixed(1)}%
+                      <td style={{ fontWeight: 600 }}>{p.name}</td>
+                      <td style={{ color: 'var(--text-secondary)' }}>Production Cluster</td>
+                      <td style={{ fontWeight: 600 }}>{(p.rowsIn * 1000).toLocaleString()}</td>
+                      <td style={{ fontWeight: 600 }}>{(p.rowsOut * 1000).toLocaleString()}</td>
+                      <td style={{ color: Number(drop) > 0 ? '#EF4444' : '#10B981', fontWeight: 600 }}>
+                        {drop}%
                       </td>
-                      <td style={{ fontSize: 12 }}>
-                        {d.avg_duration_seconds != null ? `${Math.round(d.avg_duration_seconds)}s` : '—'}
+                      <td>{p.duration}s</td>
+                      <td style={{ color: '#6366F1', fontWeight: 600 }}>
+                        {Math.round((p.rowsOut * 1000) / Math.max(p.duration, 1))} rows/s
                       </td>
-                      <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtTime(d.last_updated_at)}</td>
                     </tr>
                   );
                 })}

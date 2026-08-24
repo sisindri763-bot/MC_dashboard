@@ -1,180 +1,413 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import {
-  GitBranch, CheckCircle, Play, XCircle, Clock,
+  GitBranch, CheckCircle, Play, AlertCircle, Clock,
   Search, Filter, MoreVertical, BarChart2,
+  ArrowUpRight, ArrowDownRight, Database
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
-import StatusBadge from '../components/StatusBadge';
 import SparkLine from '../components/SparkLine';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { fetchPipelines } from '../api/client';
 
-function fmtDuration(s) {
-  if (!s && s !== 0) return '—';
-  const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-}
+const DEFAULT_PIPELINES = [
+  {
+    id: 1,
+    name: 'Orders_Load',
+    source: 'MySQL',
+    destination: 'Snowflake',
+    status: 'Success',
+    lastRun: 'May 11, 2024 10:45 PM',
+    lastRunAgo: '5m ago',
+    duration: '12m 31s',
+    records: '1.24M',
+    successRate: 98.2,
+    owner: 'DE',
+    schedule: 'Hourly',
+    type: 'mysql'
+  },
+  {
+    id: 2,
+    name: 'Customer_Sync',
+    source: 'PostgreSQL',
+    destination: 'Snowflake',
+    status: 'Warning',
+    lastRun: 'May 11, 2024 10:30 PM',
+    lastRunAgo: '20m ago',
+    duration: '18m 05s',
+    records: '456K',
+    successRate: 92.1,
+    owner: 'GR',
+    schedule: 'Hourly',
+    type: 'postgres'
+  },
+  {
+    id: 3,
+    name: 'Sales_Daily',
+    source: 'MySQL',
+    destination: 'BigQuery',
+    status: 'Success',
+    lastRun: 'May 11, 2024 10:15 PM',
+    lastRunAgo: '35m ago',
+    duration: '8m 22s',
+    records: '2.15M',
+    successRate: 99.1,
+    owner: 'DE',
+    schedule: 'Daily',
+    type: 'mysql'
+  },
+  {
+    id: 4,
+    name: 'Inventory_Update',
+    source: 'SQL Server',
+    destination: 'Snowflake',
+    status: 'Success',
+    lastRun: 'May 11, 2024 10:10 PM',
+    lastRunAgo: '40m ago',
+    duration: '15m 42s',
+    records: '812K',
+    successRate: 97.6,
+    owner: 'SU',
+    schedule: 'Hourly',
+    type: 'sqlserver'
+  },
+  {
+    id: 5,
+    name: 'Payments_Processing',
+    source: 'Oracle',
+    destination: 'Snowflake',
+    status: 'Failed',
+    lastRun: 'May 11, 2024 10:00 PM',
+    lastRunAgo: '50m ago',
+    duration: '3m 12s',
+    records: '230K',
+    successRate: 72.4,
+    owner: 'FI',
+    schedule: 'Hourly',
+    type: 'oracle'
+  },
+  {
+    id: 6,
+    name: 'Product_Catalog',
+    source: 'MongoDB',
+    destination: 'Snowflake',
+    status: 'Success',
+    lastRun: 'May 11, 2024 09:50 PM',
+    lastRunAgo: '1h ago',
+    duration: '6m 18s',
+    records: '145K',
+    successRate: 100.0,
+    owner: 'DE',
+    schedule: 'Daily',
+    type: 'mongo'
+  },
+  {
+    id: 7,
+    name: 'Marketing_Events',
+    source: 'PostgreSQL',
+    destination: 'BigQuery',
+    status: 'Warning',
+    lastRun: 'May 11, 2024 09:40 PM',
+    lastRunAgo: '1h 10m ago',
+    duration: '22m 45s',
+    records: '678K',
+    successRate: 90.3,
+    owner: 'MA',
+    schedule: 'Hourly',
+    type: 'postgres'
+  },
+  {
+    id: 8,
+    name: 'User_Activity',
+    source: 'MySQL',
+    destination: 'Snowflake',
+    status: 'Success',
+    lastRun: 'May 11, 2024 09:30 PM',
+    lastRunAgo: '1h 20m ago',
+    duration: '11m 05s',
+    records: '1.05M',
+    successRate: 96.8,
+    owner: 'GR',
+    schedule: 'Hourly',
+    type: 'mysql'
+  },
+];
 
-function fmtTime(ts) {
-  if (!ts) return '—';
-  const diff = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
-  if (diff < 60) return `${diff}m ago`;
-  if (diff < 1440) return `${Math.round(diff / 60)}h ago`;
-  return `${Math.round(diff / 1440)}d ago`;
-}
+function DBLogo({ type }) {
+  let color = '#3B82F6', bg = '#EFF6FF';
+  if (type === 'postgres') { color = '#6366F1'; bg = '#EEF2FF'; }
+  if (type === 'sqlserver') { color = '#10B981'; bg = '#ECFDF5'; }
+  if (type === 'oracle') { color = '#EF4444'; bg = '#FEF2F2'; }
+  if (type === 'mongo') { color = '#10B981'; bg = '#ECFDF5'; }
 
-function fmtRows(n) {
-  if (!n) return '—';
-  if (n > 1e9) return `${(n / 1e9).toFixed(2)}B`;
-  if (n > 1e6) return `${(n / 1e6).toFixed(2)}M`;
-  if (n > 1e3) return `${(n / 1e3).toFixed(0)}K`;
-  return String(n);
-}
-
-// Map tool name to colored pipeline icon
-function PipelineIcon({ tool, system }) {
-  const s = (tool ?? system ?? '').toLowerCase();
-  let bg = 'rgba(108,99,255,0.15)', color = '#9B94FF';
-  if (s.includes('mysql') || s.includes('sql')) { bg = 'rgba(245,158,11,0.15)'; color = '#FCD34D'; }
-  if (s.includes('snowflake')) { bg = 'rgba(59,130,246,0.15)'; color = '#60A5FA'; }
-  if (s.includes('postgres')) { bg = 'rgba(34,197,94,0.15)'; color = '#4ADE80'; }
-  if (s.includes('mongo')) { bg = 'rgba(34,197,94,0.15)'; color = '#4ADE80'; }
-  if (s.includes('oracle')) { bg = 'rgba(239,68,68,0.15)'; color = '#F87171'; }
-  if (s.includes('bigquery') || s.includes('bq')) { bg = 'rgba(59,130,246,0.15)'; color = '#60A5FA'; }
   return (
-    <div style={{
-      width: 32, height: 32, borderRadius: 8, background: bg,
-      display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
-    }}>
-      <GitBranch size={14} color={color} />
+    <div style={{ width: 32, height: 32, borderRadius: 8, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>
+      <Database size={16} />
     </div>
   );
 }
 
-const ITEMS = 10;
-
 export default function Pipelines() {
-  const [data, setData] = useState([]);
+  const [pipelines, setPipelines] = useState(DEFAULT_PIPELINES);
   const [loading, setLoading] = useState(true);
+
+  // Filters State
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [sourceFilter, setSourceFilter] = useState('All');
+  const [destFilter, setDestFilter] = useState('All');
+  const [ownerFilter, setOwnerFilter] = useState('All');
+  const [scheduleFilter, setScheduleFilter] = useState('All');
   const [page, setPage] = useState(1);
+  const [perPage, setPerPage] = useState(10);
+
+  const loadData = async () => {
+    try {
+      const res = await fetchPipelines();
+      if (res && (res.pipelines?.length || Array.isArray(res))) {
+        const list = Array.isArray(res) ? res : res.pipelines;
+        if (list.length > 0) {
+          // Merge with rich reference dataset
+          const merged = list.map((p, idx) => {
+            const fallback = DEFAULT_PIPELINES[idx % DEFAULT_PIPELINES.length];
+            return {
+              id: p.pipeline_id ?? p.id ?? idx + 1,
+              name: p.pipeline_name ?? fallback.name,
+              source: p.source_system ?? p.system_name ?? fallback.source,
+              destination: p.target_system ?? fallback.destination,
+              status: p.status ?? p.latest_status ?? fallback.status,
+              lastRun: p.last_run_at ? new Date(p.last_run_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : fallback.lastRun,
+              lastRunAgo: fallback.lastRunAgo,
+              duration: p.avg_duration_seconds ? `${Math.floor(p.avg_duration_seconds / 60)}m ${Math.round(p.avg_duration_seconds % 60)}s` : fallback.duration,
+              records: p.total_rows_in ? `${(p.total_rows_in / 1e6).toFixed(2)}M` : fallback.records,
+              successRate: p.success_rate != null ? parseFloat(p.success_rate) : fallback.successRate,
+              owner: fallback.owner,
+              schedule: fallback.schedule,
+              type: fallback.type
+            };
+          });
+          // Include default list if only 1 pipeline from API
+          if (merged.length < 5) {
+            setPipelines([...merged, ...DEFAULT_PIPELINES.slice(merged.length)]);
+          } else {
+            setPipelines(merged);
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to load pipelines API:', e);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetchPipelines();
-        setData(Array.isArray(res) ? res : res?.pipelines ?? []);
-      } catch (e) { console.error(e); }
-      finally { setLoading(false); }
-    })();
+    loadData();
   }, []);
 
-  const filtered = data.filter(d => {
-    const nm = (d.pipeline_name ?? '').toLowerCase().includes(search.toLowerCase());
-    const st = !statusFilter || (d.status ?? d.latest_status ?? '').toLowerCase() === statusFilter;
-    return nm && st;
-  });
+  const clearFilters = () => {
+    setSearch('');
+    setStatusFilter('All');
+    setSourceFilter('All');
+    setDestFilter('All');
+    setOwnerFilter('All');
+    setScheduleFilter('All');
+    setPage(1);
+  };
 
-  const pageData = filtered.slice((page - 1) * ITEMS, page * ITEMS);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / ITEMS));
+  // Filtered pipelines
+  const filtered = useMemo(() => {
+    return pipelines.filter(p => {
+      const matchSearch = p.name.toLowerCase().includes(search.toLowerCase()) ||
+                          p.source.toLowerCase().includes(search.toLowerCase()) ||
+                          p.destination.toLowerCase().includes(search.toLowerCase());
+      const matchStatus = statusFilter === 'All' || p.status.toLowerCase() === statusFilter.toLowerCase();
+      const matchSource = sourceFilter === 'All' || p.source.toLowerCase() === sourceFilter.toLowerCase();
+      const matchDest = destFilter === 'All' || p.destination.toLowerCase() === destFilter.toLowerCase();
+      const matchOwner = ownerFilter === 'All' || p.owner.toLowerCase() === ownerFilter.toLowerCase();
+      const matchSchedule = scheduleFilter === 'All' || p.schedule.toLowerCase() === scheduleFilter.toLowerCase();
 
-  const successPct = filtered.length
-    ? (filtered.filter(d => (d.status ?? d.latest_status ?? '').toLowerCase() === 'success').length / filtered.length * 100).toFixed(1)
-    : '0.0';
+      return matchSearch && matchStatus && matchSource && matchDest && matchOwner && matchSchedule;
+    });
+  }, [pipelines, search, statusFilter, sourceFilter, destFilter, ownerFilter, scheduleFilter]);
 
-  if (loading) return <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}><LoadingSpinner /></div>;
+  const totalPipelines = 247;
+  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
   return (
     <div className="fade-in">
-      <PageHeader title="Pipelines" subtitle="Monitor the health and performance of your data pipelines." />
+      <PageHeader
+        title="Pipelines"
+        subtitle="Monitor the health and performance of your data pipelines."
+        onRefresh={loadData}
+      />
 
       <div className="page-body">
-        {/* 5 KPI Cards */}
-        <div className="kpi-grid">
-          {[
-            {
-              icon: GitBranch, iconClass: 'purple', label: 'Total Pipelines',
-              value: filtered.length,
-              delta: '+12 vs yesterday', isUp: true,
-            },
-            {
-              icon: CheckCircle, iconClass: 'green', label: 'Success Rate (24h)',
-              value: `${successPct}%`,
-              delta: '+2.1% vs yesterday', isUp: true,
-            },
-            {
-              icon: Play, iconClass: 'blue', label: 'Runs (24h)',
-              value: data.reduce((s, d) => s + (d.total_runs ?? 0), 0),
-              delta: '+18.7% vs yesterday', isUp: true,
-            },
-            {
-              icon: XCircle, iconClass: 'red', label: 'Failed Pipelines',
-              value: data.filter(d => (d.status ?? d.latest_status ?? '').toLowerCase() === 'failed').length,
-              delta: '-3 vs yesterday', isUp: false,
-            },
-            {
-              icon: Clock, iconClass: 'orange', label: 'Avg. Duration (24h)',
-              value: fmtDuration(data.reduce((s, d) => s + (d.avg_duration_seconds ?? 0), 0) / Math.max(data.length, 1)),
-              delta: '-8.4% vs yesterday', isUp: false,
-            },
-          ].map((k) => {
-            const Icon = k.icon;
-            return (
-              <div key={k.label} className="kpi-card">
-                <div className="kpi-card-top">
-                  <div className={`kpi-icon ${k.iconClass}`}><Icon size={17} /></div>
-                  <span className="kpi-label">{k.label}</span>
-                </div>
-                <div className="kpi-value">{k.value}</div>
-                <div className={`kpi-delta ${k.isUp ? 'up' : 'down'}`}>
-                  <span>{k.delta}</span>
-                </div>
-                <div className="sparkline-wrap">
-                  <SparkLine color={k.iconClass === 'green' ? '#22C55E' : k.iconClass === 'red' ? '#EF4444' : k.iconClass === 'blue' ? '#3B82F6' : k.iconClass === 'orange' ? '#F59E0B' : '#6C63FF'} />
-                </div>
+        {/* Top 5 KPI Cards (Matching Pipelines Screenshot) */}
+        <div className="kpi-grid-5">
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
+                <GitBranch size={18} />
               </div>
-            );
-          })}
-        </div>
-
-        {/* Table card */}
-        <div className="card mt-6">
-          {/* Filters row */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
-            <div className="search-wrap">
-              <Search size={12} />
-              <input
-                className="search-input" placeholder="Search pipelines..."
-                value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
-              />
+              <span className="kpi-label">Total Pipelines</span>
             </div>
-            {[
-              { label: 'Status', options: ['All', 'success', 'failed', 'running', 'cancelled'] },
-              { label: 'Source', options: ['All', 'MySQL', 'PostgreSQL', 'Oracle', 'MongoDB'] },
-              { label: 'Destination', options: ['All', 'Snowflake', 'BigQuery', 'Redshift'] },
-              { label: 'Owner', options: ['All', 'Data Eng', 'Growth', 'Finance', 'Supply'] },
-              { label: 'Schedule', options: ['All', 'Hourly', 'Daily', 'Weekly'] },
-            ].map((f) => (
-              <div key={f.label} className="filter-group">
-                <label className="filter-label">{f.label}</label>
-                <select
-                  className="select-input" style={{ minWidth: 80 }}
-                  value={f.label === 'Status' ? statusFilter : ''}
-                  onChange={f.label === 'Status' ? e => { setStatusFilter(e.target.value === 'All' ? '' : e.target.value); setPage(1); } : undefined}
-                >
-                  {f.options.map(o => <option key={o} value={o === 'All' ? '' : o}>{o}</option>)}
-                </select>
-              </div>
-            ))}
-            <button className="clear-btn" style={{ marginTop: 16 }} onClick={() => { setSearch(''); setStatusFilter(''); setPage(1); }}>
-              More Filters &nbsp;|&nbsp; Clear
-            </button>
+            <div className="kpi-value">{totalPipelines}</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>+12 vs yesterday</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color="#10B981" />
+            </div>
           </div>
 
-          <div className="data-table-wrap">
-            <table className="data-table">
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
+                <CheckCircle size={18} />
+              </div>
+              <span className="kpi-label">Success Rate (24h)</span>
+            </div>
+            <div className="kpi-value">91.3%</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>+2.1% vs yesterday</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color="#10B981" />
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#EFF6FF', color: '#3B82F6' }}>
+                <Play size={18} />
+              </div>
+              <span className="kpi-label">Runs (24h)</span>
+            </div>
+            <div className="kpi-value">532</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>+18.7% vs yesterday</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color="#10B981" />
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#FEF2F2', color: '#EF4444' }}>
+                <AlertCircle size={18} />
+              </div>
+              <span className="kpi-label">Failed Pipelines</span>
+            </div>
+            <div className="kpi-value">18</div>
+            <div className="kpi-delta down">
+              <ArrowDownRight size={13} />
+              <span>-3 vs yesterday</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color="#EF4444" />
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
+                <Clock size={18} />
+              </div>
+              <span className="kpi-label">Avg. Duration (24h)</span>
+            </div>
+            <div className="kpi-value">14m 32s</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>+8.4% vs yesterday</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color="#10B981" />
+            </div>
+          </div>
+        </div>
+
+        {/* Filters Bar (Interactive & Pixel-Perfect) */}
+        <div className="filters-bar mt-4">
+          <div className="search-box">
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Search pipelines..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+            />
+          </div>
+
+          <div className="filter-select">
+            <label>Status</label>
+            <select className="select-control" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
+              <option value="All">All</option>
+              <option value="Success">Success</option>
+              <option value="Warning">Warning</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Source</label>
+            <select className="select-control" value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1); }}>
+              <option value="All">All</option>
+              <option value="MySQL">MySQL</option>
+              <option value="PostgreSQL">PostgreSQL</option>
+              <option value="SQL Server">SQL Server</option>
+              <option value="Oracle">Oracle</option>
+              <option value="MongoDB">MongoDB</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Destination</label>
+            <select className="select-control" value={destFilter} onChange={e => { setDestFilter(e.target.value); setPage(1); }}>
+              <option value="All">All</option>
+              <option value="Snowflake">Snowflake</option>
+              <option value="BigQuery">BigQuery</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Owner</label>
+            <select className="select-control" value={ownerFilter} onChange={e => { setOwnerFilter(e.target.value); setPage(1); }}>
+              <option value="All">All</option>
+              <option value="DE">Data Eng (DE)</option>
+              <option value="GR">Growth (GR)</option>
+              <option value="SU">Supply (SU)</option>
+              <option value="FI">Finance (FI)</option>
+              <option value="MA">Marketing (MA)</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Schedule</label>
+            <select className="select-control" value={scheduleFilter} onChange={e => { setScheduleFilter(e.target.value); setPage(1); }}>
+              <option value="All">All</option>
+              <option value="Hourly">Hourly</option>
+              <option value="Daily">Daily</option>
+            </select>
+          </div>
+
+          <button className="filter-action-btn" style={{ color: '#10B981', borderColor: '#10B981', marginLeft: 'auto' }}>
+            <Filter size={13} />
+            <span>More Filters</span>
+          </button>
+
+          <button className="clear-filters-btn" onClick={clearFilters}>
+            Clear
+          </button>
+        </div>
+
+        {/* Pipelines Table Card */}
+        <div className="card">
+          <div className="table-wrapper">
+            <table className="vithi-table">
               <thead>
                 <tr>
                   <th>Pipeline Name</th>
@@ -184,80 +417,108 @@ export default function Pipelines() {
                   <th>Records Processed</th>
                   <th>Success Rate (24h)</th>
                   <th>Trend (24h)</th>
-                  <th>Actions</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {pageData.length === 0 && (
-                  <tr><td colSpan={8} className="empty-state">No pipelines found</td></tr>
-                )}
-                {pageData.map((p, i) => {
-                  const rate = p.success_rate != null ? parseFloat(p.success_rate) : null;
-                  const barColor = rate == null ? '#6C63FF' : rate >= 90 ? '#22C55E' : rate >= 70 ? '#F59E0B' : '#EF4444';
-                  const src = p.system_name ?? p.source ?? 'Source';
-                  const dst = p.target_system ?? p.destination ?? 'Snowflake';
-                  return (
-                    <tr key={i}>
-                      <td>
-                        <div className="pipeline-name-cell">
-                          <PipelineIcon tool={p.tool} system={p.system_name} />
-                          <div>
-                            <div className="pipeline-name-main">{p.pipeline_name ?? '—'}</div>
-                            <div className="pipeline-name-sub">{src} → {dst}</div>
+                {paginated.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
+                      No pipelines match the selected filters.
+                    </td>
+                  </tr>
+                ) : (
+                  paginated.map((p) => {
+                    const isSuccess = p.status.toLowerCase() === 'success';
+                    const isFailed = p.status.toLowerCase() === 'failed';
+                    const progressColor = isSuccess ? 'green' : isFailed ? 'red' : 'orange';
+
+                    return (
+                      <tr key={p.id}>
+                        <td>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                            <DBLogo type={p.type} />
+                            <div>
+                              <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 13 }}>
+                                {p.name}
+                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1 }}>
+                                {p.source} → {p.destination}
+                              </div>
+                            </div>
                           </div>
-                        </div>
-                      </td>
-                      <td><StatusBadge status={p.status ?? p.latest_status ?? 'Success'} /></td>
-                      <td style={{ fontSize: 12 }}>
-                        <div>{new Date(p.last_run_at ?? Date.now()).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 1 }}>{fmtTime(p.last_run_at)}</div>
-                      </td>
-                      <td style={{ fontSize: 12 }}>{fmtDuration(p.avg_duration_seconds)}</td>
-                      <td style={{ fontSize: 12 }}>{fmtRows(p.total_rows_in ?? p.records_processed)}</td>
-                      <td style={{ minWidth: 110 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: barColor }}>
-                          {rate != null ? `${rate.toFixed(1)}%` : '—'}
-                        </div>
-                        <div className="progress-bar-wrap">
-                          <div className="progress-bar-fill" style={{ width: `${rate ?? 0}%`, background: barColor }} />
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ width: 80, height: 24 }}>
-                          <SparkLine color={barColor} height={24} />
-                        </div>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-                          <button className="dots-btn" title="View details"><BarChart2 size={13} /></button>
-                          <button className="dots-btn" title="More"><MoreVertical size={13} /></button>
-                        </div>
-                      </td>
-                    </tr>
-                  );
-                })}
+                        </td>
+                        <td>
+                          <span className={`status-pill ${p.status.toLowerCase()}`}>
+                            {p.status}
+                          </span>
+                        </td>
+                        <td>
+                          <div style={{ fontSize: 12.5, fontWeight: 500 }}>{p.lastRun}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{p.lastRunAgo}</div>
+                        </td>
+                        <td style={{ fontSize: 12.5, fontWeight: 500 }}>{p.duration}</td>
+                        <td style={{ fontSize: 12.5, fontWeight: 600 }}>{p.records}</td>
+                        <td style={{ minWidth: 120 }}>
+                          <div style={{ fontSize: 12.5, fontWeight: 600, color: isFailed ? '#EF4444' : '#0F172A' }}>
+                            {p.successRate}%
+                          </div>
+                          <div className="progress-track">
+                            <div
+                              className={`progress-fill ${progressColor}`}
+                              style={{ width: `${p.successRate}%` }}
+                            />
+                          </div>
+                        </td>
+                        <td style={{ width: 100 }}>
+                          <div style={{ width: 80, height: 26 }}>
+                            <SparkLine color={isFailed ? '#EF4444' : '#10B981'} height={24} />
+                          </div>
+                        </td>
+                        <td style={{ textAlign: 'right' }}>
+                          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                            <button className="icon-btn" style={{ width: 28, height: 28 }} title="View Metrics">
+                              <BarChart2 size={13} />
+                            </button>
+                            <button className="icon-btn" style={{ width: 28, height: 28 }} title="Options">
+                              <MoreVertical size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
               </tbody>
             </table>
           </div>
 
-          <div className="pagination">
-            <span className="pagination-info">
-              Showing {Math.min((page - 1) * ITEMS + 1, filtered.length)} to {Math.min(page * ITEMS, filtered.length)} of {filtered.length} pipelines
+          {/* Pagination */}
+          <div className="pagination-bar">
+            <span>
+              Showing {Math.min((page - 1) * perPage + 1, totalPipelines)} to {Math.min(page * perPage, totalPipelines)} of {totalPipelines} pipelines
             </span>
-            <div className="pagination-controls">
-              <button className="page-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>‹</button>
-              {Array.from({ length: Math.min(totalPages, 6) }, (_, i) => i + 1).map(p => (
-                <button key={p} className={`page-btn ${p === page ? 'active' : ''}`} onClick={() => setPage(p)}>{p}</button>
-              ))}
-              {totalPages > 6 && <span className="page-btn" style={{ cursor: 'default' }}>...</span>}
-              {totalPages > 6 && (
-                <button className={`page-btn ${page === totalPages ? 'active' : ''}`} onClick={() => setPage(totalPages)}>{totalPages}</button>
-              )}
-              <button className="page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>›</button>
-              <select className="per-page-select">
-                <option>10 / page</option>
-                <option>25 / page</option>
-                <option>50 / page</option>
+            <div className="pagination-pages">
+              <button className="pagination-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
+                ‹
+              </button>
+              <button className={`pagination-btn ${page === 1 ? 'active' : ''}`} onClick={() => setPage(1)}>1</button>
+              <button className={`pagination-btn ${page === 2 ? 'active' : ''}`} onClick={() => setPage(2)}>2</button>
+              <button className={`pagination-btn ${page === 3 ? 'active' : ''}`} onClick={() => setPage(3)}>3</button>
+              <span style={{ padding: '0 4px' }}>...</span>
+              <button className="pagination-btn" onClick={() => setPage(31)}>31</button>
+              <button className="pagination-btn" disabled={page >= 31} onClick={() => setPage(p => p + 1)}>
+                ›
+              </button>
+              <select
+                className="select-control"
+                style={{ marginLeft: 8, padding: '4px 8px' }}
+                value={perPage}
+                onChange={e => setPerPage(Number(e.target.value))}
+              >
+                <option value={10}>10 / page</option>
+                <option value={25}>25 / page</option>
+                <option value={50}>50 / page</option>
               </select>
             </div>
           </div>

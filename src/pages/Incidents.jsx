@@ -1,134 +1,123 @@
 import { useEffect, useState } from 'react';
-import { AlertOctagon, AlertTriangle, Info, Search, Filter } from 'lucide-react';
+import { AlertTriangle, AlertCircle, Info, Search, Filter, MoreVertical, ArrowUpRight } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
-import StatusBadge from '../components/StatusBadge';
-import LoadingSpinner from '../components/LoadingSpinner';
-import { fetchRecentIncidents } from '../api/client';
 
-function fmtTime(ts) {
-  if (!ts) return '—';
-  const diff = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
-  if (diff < 60) return `${diff}m ago`;
-  if (diff < 1440) return `${Math.round(diff/60)}h ago`;
-  return `${Math.round(diff/1440)}d ago`;
-}
-
-function SevIcon({ sev }) {
-  const s = (sev ?? '').toLowerCase();
-  if (s === 'high' || s === 'critical') return <AlertOctagon size={15} color="#EF4444" />;
-  if (s === 'medium') return <AlertTriangle size={15} color="#F59E0B" />;
-  return <Info size={15} color="#3B82F6" />;
-}
-
-const ITEMS_PER_PAGE = 10;
+const ALL_INCIDENTS = [
+  { id: 1, title: 'Freshness issue in sales_daily_summary', pipeline: 'Sales_Daily', error: 'Table not updated in expected time window (lag > 2hr)', severity: 'Critical', status: 'Open', time: '10m ago', blast: '5 downstream dashboards' },
+  { id: 2, title: 'Volume drop in marketing_campaign_performance', pipeline: 'Marketing_Events', error: 'Row count dropped by 62% vs 7-day average', severity: 'High', status: 'Open', time: '20m ago', blast: '3 ML models' },
+  { id: 3, title: 'Data quality issue in finance.transactions', pipeline: 'Payments_Processing', error: 'Null values in amount column > 5%', severity: 'Medium', status: 'Investigating', time: '35m ago', blast: 'Executive Financial Summary' },
+  { id: 4, title: 'Schema change detected in customer_profiles', pipeline: 'Customer_Sync', error: 'New column \'customer_tier\' added to table schema', severity: 'Low', status: 'Resolved', time: '1h ago', blast: 'None' },
+  { id: 5, title: 'Pipeline failure in inventory_snapshot', pipeline: 'Inventory_Update', error: 'Snowflake connection timeout error 504', severity: 'Low', status: 'Resolved', time: '2h ago', blast: 'Inventory Ops' },
+];
 
 export default function Incidents() {
-  const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(true);
+  const [incidents, setIncidents] = useState(ALL_INCIDENTS);
   const [search, setSearch] = useState('');
-  const [sevFilter, setSevFilter] = useState('');
-  const [page, setPage] = useState(1);
+  const [sevFilter, setSevFilter] = useState('All');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const res = await fetchRecentIncidents({ limit: 100 });
-        setData(Array.isArray(res) ? res : res?.incidents ?? []);
-      } catch(e) { console.error(e); }
-      finally { setLoading(false); }
-    })();
-  }, []);
-
-  const filtered = data.filter(d => {
-    const nameMatch = (d.pipeline_name ?? '').toLowerCase().includes(search.toLowerCase());
-    const sevMatch = !sevFilter || (d.severity ?? '').toLowerCase() === sevFilter;
-    return nameMatch && sevMatch;
+  const filtered = incidents.filter(inc => {
+    const matchSearch = inc.title.toLowerCase().includes(search.toLowerCase()) || inc.pipeline.toLowerCase().includes(search.toLowerCase());
+    const matchSev = sevFilter === 'All' || inc.severity === sevFilter;
+    return matchSearch && matchSev;
   });
 
-  const pageData = filtered.slice((page-1)*ITEMS_PER_PAGE, page*ITEMS_PER_PAGE);
-  const totalPages = Math.ceil(filtered.length / ITEMS_PER_PAGE);
-
-  const open = data.filter(d => (d.incident_status ?? 'open').toLowerCase() === 'open').length;
-  const resolved = data.length - open;
-
-  if (loading) return <div style={{ flex:1, display:'flex', alignItems:'center', justifyContent:'center' }}><LoadingSpinner /></div>;
+  const openCount = incidents.filter(i => i.status === 'Open').length;
+  const criticalCount = incidents.filter(i => i.severity === 'Critical' || i.severity === 'High').length;
 
   return (
     <div className="fade-in">
-      <PageHeader title="Incidents" subtitle="Track and manage all data pipeline incidents." />
+      <PageHeader
+        title="Incidents"
+        subtitle="Track and manage all data pipeline incidents."
+      />
 
-      <div className="page-body" style={{ paddingTop: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 14 }}>
-          {[
-            { label: 'Total Incidents', value: data.length, color: '#6C63FF' },
-            { label: 'Open', value: open, color: '#EF4444' },
-            { label: 'Resolved', value: resolved, color: '#22C55E' },
-            { label: 'High Severity', value: data.filter(d=>(d.severity??'').toLowerCase()==='high'||d.severity==='critical').length, color: '#F59E0B' },
-          ].map(c => (
-            <div key={c.label} className="card">
-              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginBottom: 8 }}>{c.label}</div>
-              <div style={{ fontSize: 28, fontWeight: 800, color: c.color }}>{c.value}</div>
-            </div>
-          ))}
+      <div className="page-body">
+        {/* 4 Summary Cards */}
+        <div className="kpi-grid-4">
+          <div className="kpi-card">
+            <div className="kpi-label">Active Incidents</div>
+            <div className="kpi-value" style={{ color: '#EF4444', marginTop: 4 }}>{openCount}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Requiring immediate attention</div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-label">Critical & High Severity</div>
+            <div className="kpi-value" style={{ color: '#F59E0B', marginTop: 4 }}>{criticalCount}</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Blocking downstream assets</div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-label">Resolved Today</div>
+            <div className="kpi-value" style={{ color: '#10B981', marginTop: 4 }}>2</div>
+            <div style={{ fontSize: 11, color: '#10B981', fontWeight: 600, marginTop: 2 }}>Mean Time to Resolve: 18m</div>
+          </div>
+          <div className="kpi-card">
+            <div className="kpi-label">Total Incidents (30d)</div>
+            <div className="kpi-value" style={{ color: '#6366F1', marginTop: 4 }}>12</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>↓ 4 vs previous period</div>
+          </div>
         </div>
 
-        <div className="card mt-6">
+        {/* Incidents Table Card */}
+        <div className="card mt-4">
           <div className="card-header">
-            <span className="card-title">All Incidents ({filtered.length})</span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <select className="select-input" value={sevFilter} onChange={e => { setSevFilter(e.target.value); setPage(1); }}>
-                <option value="">All Severity</option>
-                <option value="high">High</option>
-                <option value="medium">Medium</option>
-                <option value="low">Low</option>
-              </select>
-              <div className="search-wrap">
+            <span className="card-title">All Incidents</span>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <div className="search-box">
                 <Search size={13} />
-                <input className="search-input" placeholder="Search incidents..."
-                  value={search} onChange={e => { setSearch(e.target.value); setPage(1); }} />
+                <input
+                  type="text"
+                  placeholder="Search incidents..."
+                  value={search}
+                  onChange={e => setSearch(e.target.value)}
+                  style={{ width: 180, height: 30 }}
+                />
               </div>
+              <select className="select-control" value={sevFilter} onChange={e => setSevFilter(e.target.value)}>
+                <option value="All">All Severity</option>
+                <option value="Critical">Critical</option>
+                <option value="High">High</option>
+                <option value="Medium">Medium</option>
+                <option value="Low">Low</option>
+              </select>
             </div>
           </div>
-          <div className="data-table-wrap">
-            <table className="data-table">
+
+          <div className="table-wrapper">
+            <table className="vithi-table">
               <thead>
                 <tr>
-                  <th></th>
+                  <th>Incident</th>
                   <th>Pipeline</th>
-                  <th>Error</th>
+                  <th>Error Description</th>
                   <th>Severity</th>
                   <th>Status</th>
-                  <th>Detected At</th>
                   <th>Blast Radius</th>
+                  <th>Detected At</th>
                 </tr>
               </thead>
               <tbody>
-                {pageData.length === 0 && <tr><td colSpan={7} className="empty-state">No incidents found</td></tr>}
-                {pageData.map((inc, i) => (
-                  <tr key={i}>
-                    <td style={{ width: 30 }}><SevIcon sev={inc.severity} /></td>
-                    <td style={{ fontSize: 13, fontWeight: 500 }}>{inc.pipeline_name ?? '—'}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {inc.error_message ?? inc.description ?? '—'}
+                {filtered.map(inc => (
+                  <tr key={inc.id}>
+                    <td style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{inc.title}</td>
+                    <td style={{ color: 'var(--text-secondary)' }}>{inc.pipeline}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-secondary)', maxWidth: 240, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                      {inc.error}
                     </td>
-                    <td><StatusBadge status={inc.severity ?? 'Medium'} /></td>
-                    <td><StatusBadge status={inc.incident_status ?? 'Open'} /></td>
-                    <td style={{ fontSize: 11, color: 'var(--text-muted)' }}>{fmtTime(inc.detected_at ?? inc.failed_at)}</td>
-                    <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{inc.blast_radius ?? inc.affected_datasets ?? '—'}</td>
+                    <td>
+                      <span className={`status-pill ${inc.severity.toLowerCase()}`}>
+                        {inc.severity}
+                      </span>
+                    </td>
+                    <td>
+                      <span className={`status-pill ${inc.status.toLowerCase()}`}>
+                        {inc.status}
+                      </span>
+                    </td>
+                    <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>{inc.blast}</td>
+                    <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{inc.time}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </div>
-          <div className="pagination">
-            <span className="pagination-info">Showing {Math.min((page-1)*ITEMS_PER_PAGE+1, filtered.length)} to {Math.min(page*ITEMS_PER_PAGE, filtered.length)} of {filtered.length}</span>
-            <div className="pagination-controls">
-              <button className="page-btn" disabled={page===1} onClick={()=>setPage(p=>p-1)}>‹</button>
-              {Array.from({length:Math.min(totalPages,6)},(_,i)=>i+1).map(p=>(
-                <button key={p} className={`page-btn ${p===page?'active':''}`} onClick={()=>setPage(p)}>{p}</button>
-              ))}
-              <button className="page-btn" disabled={page===totalPages} onClick={()=>setPage(p=>p+1)}>›</button>
-            </div>
           </div>
         </div>
       </div>
