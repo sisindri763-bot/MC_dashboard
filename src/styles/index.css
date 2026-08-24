@@ -112,6 +112,8 @@ html.dark {
 
 html, body, #root {
   height: 100%;
+  width: 100%;
+  overflow: hidden;
   font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
   background-color: var(--bg-base);
   color: var(--text-primary);
@@ -125,29 +127,18 @@ html, body, #root {
 ::-webkit-scrollbar-thumb { background: #CBD5E1; border-radius: 99px; }
 html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 
-/* ── App Layout ─────────────────────────────────────────────────────────── */
+/* ── App Layout Fixed Rigid Structure (Never Slides or Overlaps) ──────────── */
 .app-layout {
   display: flex;
   flex-direction: row;
   height: 100vh;
   width: 100vw;
+  max-width: 100vw;
   overflow: hidden;
-  background-color: var(--bg-base);
-}
-
-.main-content {
-  flex: 1 1 0%;
-  min-width: 0;
-  height: 100vh;
-  overflow-y: auto;
-  overflow-x: auto;
-  display: flex;
-  flex-direction: column;
   background-color: var(--bg-base);
   position: relative;
 }
 
-/* ── Pure White / Light Sidebar ──────────────────────────────────────────── */
 .sidebar {
   width: var(--sidebar-width);
   min-width: var(--sidebar-width);
@@ -162,9 +153,26 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   overflow-x: hidden;
   user-select: none;
   position: relative;
-  z-index: 10;
+  z-index: 20;
+  flex-shrink: 0;
 }
 
+.main-content {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: calc(100vw - var(--sidebar-width));
+  max-width: calc(100vw - var(--sidebar-width));
+  height: 100vh;
+  overflow-y: auto;
+  overflow-x: hidden; /* STRICTLY PREVENTS HORIZONTAL PAGE SLIDING */
+  display: flex;
+  flex-direction: column;
+  background-color: var(--bg-base);
+  position: relative;
+  z-index: 1;
+}
+
+/* ── Sidebar Items ──────────────────────────────────────────────────────── */
 .sidebar-logo {
   display: flex;
   align-items: center;
@@ -183,6 +191,7 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   justify-content: center;
   color: #FFFFFF;
   box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
+  flex-shrink: 0;
 }
 
 .sidebar-logo-text h1 {
@@ -298,6 +307,7 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
 }
 
 .user-info .name {
@@ -367,6 +377,7 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   padding: 20px 24px 12px;
   gap: 16px;
   flex-shrink: 0;
+  width: 100%;
 }
 
 .page-header-left h2 {
@@ -493,6 +504,8 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 .page-body {
   padding: 0 24px 24px;
   flex: 1;
+  width: 100%;
+  min-width: 0;
 }
 
 /* ── Cards ──────────────────────────────────────────────────────────────── */
@@ -503,6 +516,8 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   padding: 16px 18px;
   box-shadow: var(--shadow);
   transition: all 0.15s ease;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .card:hover {
@@ -540,35 +555,40 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   text-decoration: underline;
 }
 
-/* ── KPI Grids ──────────────────────────────────────────────────────────── */
+/* ── Strict Non-overflowing KPI Grids ───────────────────────────────────── */
 .kpi-grid-5 {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
+  grid-template-columns: repeat(5, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
 }
 
 .kpi-grid-6 {
   display: grid;
-  grid-template-columns: repeat(6, 1fr);
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
 }
 
 .kpi-grid-4 {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 12px;
+  width: 100%;
 }
 
 .kpi-card {
   background: var(--bg-card);
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  padding: 16px 16px 14px;
+  padding: 14px 14px 12px;
   box-shadow: var(--shadow);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
   transition: all 0.15s ease;
+  min-width: 0;
+  overflow: hidden;
 }
 
 .kpi-card:hover {
@@ -579,13 +599,13 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 .kpi-card-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  margin-bottom: 8px;
+  gap: 8px;
+  margin-bottom: 6px;
 }
 
 .kpi-icon {
-  width: 34px;
-  height: 34px;
+  width: 32px;
+  height: 32px;
   border-radius: 8px;
   display: flex;
   align-items: center;
@@ -594,13 +614,16 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 }
 
 .kpi-label {
-  font-size: 12px;
+  font-size: 11.5px;
   color: var(--text-secondary);
   font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-value {
-  font-size: 26px;
+  font-size: 24px;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.1;
@@ -610,20 +633,23 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 .kpi-delta {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 11.5px;
+  gap: 3px;
+  font-size: 11px;
   font-weight: 600;
   margin-top: 4px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .kpi-delta.up { color: #10B981; }
 .kpi-delta.down { color: #EF4444; }
-.kpi-delta .sub { color: var(--text-muted); font-weight: 400; }
 
 .sparkline-container {
   margin-top: 8px;
-  height: 32px;
+  height: 28px;
   width: 100%;
+  min-width: 0;
 }
 
 /* ── Filters Bar ────────────────────────────────────────────────────────── */
@@ -638,6 +664,7 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   border-radius: var(--radius-lg);
   box-shadow: var(--shadow-sm);
   margin-bottom: 16px;
+  width: 100%;
 }
 
 .filter-select {
@@ -740,6 +767,7 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 .table-wrapper {
   overflow-x: auto;
   border-radius: var(--radius);
+  width: 100%;
 }
 
 .vithi-table {
@@ -887,11 +915,11 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   font-size: 12px;
 }
 
-/* ── Layout Helpers ─────────────────────────────────────────────────────── */
-.grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
-.grid-4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; }
-.grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
-.grid-5 { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; }
+/* ── Strict Responsive Grids ────────────────────────────────────────────── */
+.grid-3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 14px; width: 100%; }
+.grid-4 { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; width: 100%; }
+.grid-2 { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; width: 100%; }
+.grid-5 { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; width: 100%; }
 .mt-4 { margin-top: 14px; }
 .mt-6 { margin-top: 20px; }
 
