@@ -48,9 +48,9 @@ export default function Overview() {
     setLoading(true);
     try {
       const [kRes, cRes, hRes, incRes, pRes, allPipes] = await Promise.allSettled([
-        fetchOverviewKPIs(),
+        fetchOverviewKPIs({ preset: 'all' }),
         fetchOverviewCharts({ preset: 'all' }),
-        fetchOverviewHealth(),
+        fetchOverviewHealth({ preset: 'all' }),
         fetchRecentIncidents({ preset: 'all' }),
         fetchPipelineMonitoring({ preset: 'all' }),
         fetchPipelines({ preset: 'all' }),
