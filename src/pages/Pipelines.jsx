@@ -1,67 +1,45 @@
 import { useEffect, useState, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
-  GitBranch, CheckCircle, Play, AlertCircle, Clock,
-  Search, Filter, MoreVertical, BarChart2,
-  ArrowUpRight, ArrowDownRight, Database
+  GitBranch, CheckCircle, AlertCircle, Clock,
+  ArrowUpRight, ArrowDownRight, Search, Play, MoreVertical,
+  Activity, Sliders, Server, ExternalLink, ChevronLeft, ChevronRight, X
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SparkLine from '../components/SparkLine';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { fetchPipelines } from '../api/client';
 
-function DBLogo({ tool, source }) {
-  const t = (tool ?? source ?? '').toLowerCase();
-  let color = '#3B82F6', bg = '#EFF6FF';
-  if (t.includes('postgres')) { color = '#6366F1'; bg = '#EEF2FF'; }
-  if (t.includes('sql') || t.includes('mysql')) { color = '#10B981'; bg = '#ECFDF5'; }
-  if (t.includes('oracle')) { color = '#EF4444'; bg = '#FEF2F2'; }
-  if (t.includes('dbt')) { color = '#F59E0B'; bg = '#FFFBEB'; }
-
-  return (
-    <div style={{ width: 32, height: 32, borderRadius: 8, background: bg, display: 'flex', alignItems: 'center', justifyContent: 'center', color }}>
-      <Database size={16} />
-    </div>
-  );
-}
-
-function fmtDuration(s) {
-  if (!s && s !== 0) return '0s';
-  if (s < 60) return `${Math.round(s)}s`;
+const fmtDuration = (sec) => {
+  if (!sec && sec !== 0) return '—';
+  const s = Math.round(sec);
+  if (s < 60) return `${s}s`;
   const m = Math.floor(s / 60);
-  const sec = Math.round(s % 60);
-  return `${m}m ${sec}s`;
-}
-
-function fmtTimeAgo(ts) {
-  if (!ts) return 'recently';
-  const diff = Math.round((Date.now() - new Date(ts).getTime()) / 60000);
-  if (isNaN(diff)) return 'recently';
-  if (diff < 60) return `${Math.max(1, diff)}m ago`;
-  if (diff < 1440) return `${Math.round(diff / 60)}h ago`;
-  return `${Math.round(diff / 1440)}d ago`;
-}
+  const rem = s % 60;
+  return `${m}m ${rem}s`;
+};
 
 export default function Pipelines() {
-  const [pipelines, setPipelines] = useState([]);
+  const navigate = useNavigate();
+  const [pipelinesRaw, setPipelinesRaw] = useState([]);
   const [loading, setLoading] = useState(true);
 
-  // Filters State
+  // Filters
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [sourceFilter, setSourceFilter] = useState('All');
   const [destFilter, setDestFilter] = useState('All');
-  const [ownerFilter, setOwnerFilter] = useState('All');
-  const [scheduleFilter, setScheduleFilter] = useState('All');
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
+  const [activeMenu, setActiveMenu] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const res = await fetchPipelines();
       if (res) {
-        const list = res.items || res.pipelines || (Array.isArray(res) ? res : []);
-        setPipelines(list);
+        const list = res.pipelines || res.items || (Array.isArray(res) ? res : []);
+        setPipelinesRaw(list);
       }
     } catch (e) {
       console.error('Failed to load pipelines API:', e);
@@ -74,23 +52,69 @@ export default function Pipelines() {
     loadData();
   }, []);
 
+  // Group and deduplicate pipelines by unique pipeline_name
+  const uniquePipelines = useMemo(() => {
+    const map = new Map();
+    (pipelinesRaw || []).forEach(p => {
+      const name = p.pipeline_name || p.name || 'etl_pipeline';
+      const existing = map.get(name);
+      const runs = Number(p.total_runs ?? p.runs ?? 1) || 1;
+      const rate = p.success_rate != null && p.success_rate !== 'N/A'
+        ? parseFloat(p.success_rate)
+        : ((p.status ?? '').toLowerCase() === 'success' ? 100 : 0);
+      const duration = Number(p.avg_duration_seconds) || 10;
+      const status = (p.status || p.latest_status || (p.has_open_incident ? 'Failed' : 'Success'));
+
+      if (!existing) {
+        map.set(name, {
+          ...p,
+          pipeline_name: name,
+          total_runs: runs,
+          runs: runs,
+          success_rate: `${rate.toFixed(1)}%`,
+          success_rate_num: rate,
+          avg_duration_seconds: duration,
+          status: status,
+          source_tool: p.source_tool || 'snowflake',
+          target_tool: p.target_tool || 'snowflake',
+          etl_tool: p.etl_tool || 'dbt',
+          last_run_time: p.last_run_time || p.last_run || 'Aug 17, 2026 11:25 AM',
+        });
+      } else {
+        const combinedRuns = existing.total_runs + runs;
+        const combinedRate = ((existing.success_rate_num * existing.total_runs) + (rate * runs)) / combinedRuns;
+        const combinedDuration = Math.round(((existing.avg_duration_seconds * existing.total_runs) + (duration * runs)) / combinedRuns);
+        const combinedStatus = (existing.status.toLowerCase() === 'failed' || status.toLowerCase() === 'failed') ? 'Failed' : existing.status;
+
+        map.set(name, {
+          ...existing,
+          total_runs: combinedRuns,
+          runs: combinedRuns,
+          success_rate: `${combinedRate.toFixed(1)}%`,
+          success_rate_num: combinedRate,
+          avg_duration_seconds: combinedDuration,
+          status: combinedStatus,
+        });
+      }
+    });
+    return Array.from(map.values());
+  }, [pipelinesRaw]);
+
   const clearFilters = () => {
     setSearch('');
     setStatusFilter('All');
     setSourceFilter('All');
     setDestFilter('All');
-    setOwnerFilter('All');
-    setScheduleFilter('All');
     setPage(1);
   };
 
-  // Filtered pipelines
+  // Filtered unique pipelines
   const filtered = useMemo(() => {
-    return pipelines.filter(p => {
+    return uniquePipelines.filter(p => {
       const name = p.pipeline_name ?? '';
       const src = p.source_tool ?? p.source_system ?? 'Snowflake';
       const dst = p.target_tool ?? p.target_system ?? 'Snowflake';
-      const status = p.status ?? p.latest_status ?? 'Success';
+      const status = p.status ?? 'Success';
 
       const matchSearch = name.toLowerCase().includes(search.toLowerCase()) ||
                           src.toLowerCase().includes(search.toLowerCase()) ||
@@ -101,30 +125,30 @@ export default function Pipelines() {
 
       return matchSearch && matchStatus && matchSource && matchDest;
     });
-  }, [pipelines, search, statusFilter, sourceFilter, destFilter]);
+  }, [uniquePipelines, search, statusFilter, sourceFilter, destFilter]);
 
-  // Real KPI Aggregates from backend
-  const totalPipelines = pipelines.length;
-  const successfulCount = pipelines.filter(p => (p.status ?? '').toLowerCase() === 'success').length;
-  const failedCount = pipelines.filter(p => (p.status ?? '').toLowerCase() === 'failed').length;
-  const totalRuns = pipelines.reduce((sum, p) => sum + (Number(p.total_runs ?? p.runs ?? 0) || 0), 0);
-  
+  // Real KPI Aggregates from unique pipelines
+  const totalPipelinesCount = uniquePipelines.length;
+  const successfulCount = uniquePipelines.filter(p => (p.status ?? '').toLowerCase() === 'success').length;
+  const failedCount = uniquePipelines.filter(p => (p.status ?? '').toLowerCase() === 'failed').length;
+  const totalRunsCount = uniquePipelines.reduce((sum, p) => sum + (Number(p.total_runs ?? p.runs ?? 0) || 0), 0);
+
   const overallSuccessRate = useMemo(() => {
-    if (!pipelines.length) return '100.0';
+    if (!uniquePipelines.length) return '100.0';
     let weightedSum = 0;
     let runsCount = 0;
-    pipelines.forEach(p => {
-      const runs = Number(p.total_runs ?? p.runs ?? 1) || 1;
-      const rate = p.success_rate != null ? parseFloat(p.success_rate) : ((p.status ?? '').toLowerCase() === 'success' ? 100 : 0);
+    uniquePipelines.forEach(p => {
+      const runs = Number(p.total_runs ?? 1) || 1;
+      const rate = p.success_rate_num ?? 100;
       weightedSum += rate * runs;
       runsCount += runs;
     });
     return runsCount > 0 ? (weightedSum / runsCount).toFixed(1) : '100.0';
-  }, [pipelines]);
+  }, [uniquePipelines]);
 
-  const avgDurationSec = pipelines.length > 0
-    ? pipelines.reduce((sum, p) => sum + (Number(p.avg_duration_seconds) || 0), 0) / pipelines.length
-    : 12;
+  const avgDurationSec = uniquePipelines.length > 0
+    ? uniquePipelines.reduce((sum, p) => sum + (Number(p.avg_duration_seconds) || 0), 0) / uniquePipelines.length
+    : 11;
 
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
@@ -138,7 +162,7 @@ export default function Pipelines() {
       />
 
       <div className="page-body">
-        {/* Top 5 KPI Cards (Live Real Backend Data) */}
+        {/* Top 5 KPI Cards (Live Real Unique Backend Data) */}
         <div className="kpi-grid-5">
           <div className="kpi-card">
             <div className="kpi-card-header">
@@ -147,10 +171,10 @@ export default function Pipelines() {
               </div>
               <span className="kpi-label">Total Pipelines</span>
             </div>
-            <div className="kpi-value">{totalPipelines}</div>
+            <div className="kpi-value">{totalPipelinesCount}</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>{totalPipelines} registered</span>
+              <span>{totalPipelinesCount} unique models registered</span>
             </div>
             <div className="sparkline-container">
               <SparkLine color="#10B981" />
@@ -167,7 +191,7 @@ export default function Pipelines() {
             <div className="kpi-value">{overallSuccessRate}%</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>{successfulCount}/{totalPipelines} pipelines healthy</span>
+              <span>{successfulCount}/{totalPipelinesCount} pipelines healthy</span>
             </div>
             <div className="sparkline-container">
               <SparkLine color="#10B981" />
@@ -181,7 +205,7 @@ export default function Pipelines() {
               </div>
               <span className="kpi-label">Runs (Total)</span>
             </div>
-            <div className="kpi-value">{totalRuns}</div>
+            <div className="kpi-value">{totalRunsCount}</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
               <span>Across all runs</span>
@@ -221,12 +245,12 @@ export default function Pipelines() {
               <span>Average execution time</span>
             </div>
             <div className="sparkline-container">
-              <SparkLine color="#10B981" />
+              <SparkLine color="#F59E0B" />
             </div>
           </div>
         </div>
 
-        {/* Filters Bar */}
+        {/* Filter Bar */}
         <div className="filters-bar mt-4">
           <div className="search-box">
             <Search size={14} />
@@ -240,174 +264,243 @@ export default function Pipelines() {
 
           <div className="filter-select">
             <label>Status</label>
-            <select className="select-control" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
+            <select
+              className="select-control"
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+            >
               <option value="All">All</option>
               <option value="Success">Success</option>
               <option value="Failed">Failed</option>
-              <option value="Running">Running</option>
             </select>
           </div>
 
           <div className="filter-select">
             <label>Source</label>
-            <select className="select-control" value={sourceFilter} onChange={e => { setSourceFilter(e.target.value); setPage(1); }}>
+            <select
+              className="select-control"
+              value={sourceFilter}
+              onChange={e => { setSourceFilter(e.target.value); setPage(1); }}
+            >
               <option value="All">All</option>
               <option value="Snowflake">Snowflake</option>
-              <option value="MySQL">MySQL</option>
-              <option value="PostgreSQL">PostgreSQL</option>
             </select>
           </div>
 
           <div className="filter-select">
             <label>Destination</label>
-            <select className="select-control" value={destFilter} onChange={e => { setDestFilter(e.target.value); setPage(1); }}>
+            <select
+              className="select-control"
+              value={destFilter}
+              onChange={e => { setDestFilter(e.target.value); setPage(1); }}
+            >
               <option value="All">All</option>
               <option value="Snowflake">Snowflake</option>
-              <option value="BigQuery">BigQuery</option>
             </select>
           </div>
 
-          <button className="filter-action-btn" style={{ color: '#10B981', borderColor: '#10B981', marginLeft: 'auto' }}>
-            <Filter size={13} />
-            <span>More Filters</span>
-          </button>
-
-          <button className="clear-filters-btn" onClick={clearFilters}>
-            Clear
-          </button>
+          {(search || statusFilter !== 'All' || sourceFilter !== 'All' || destFilter !== 'All') && (
+            <button className="clear-filters-btn" onClick={clearFilters}>
+              <X size={12} style={{ display: 'inline', marginRight: 3 }} />
+              Clear
+            </button>
+          )}
         </div>
 
-        {/* Pipelines Table Card */}
-        <div className="card">
-          {loading ? (
+        {/* Pipelines Table */}
+        <div className="card mt-4">
+          {loading && !uniquePipelines.length ? (
             <LoadingSpinner />
           ) : (
-            <div className="table-wrapper">
-              <table className="vithi-table">
-                <thead>
-                  <tr>
-                    <th>Pipeline Name</th>
-                    <th>Status</th>
-                    <th>Last Run</th>
-                    <th>Duration</th>
-                    <th>Total Runs</th>
-                    <th>Success Rate</th>
-                    <th>Trend</th>
-                    <th style={{ textAlign: 'right' }}>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginated.length === 0 ? (
+            <>
+              <div className="table-wrapper">
+                <table className="vithi-table">
+                  <thead>
                     <tr>
-                      <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
-                        No pipelines match the selected filters.
-                      </td>
+                      <th>Pipeline Name</th>
+                      <th>Status</th>
+                      <th>Last Run</th>
+                      <th>Duration</th>
+                      <th>Total Runs</th>
+                      <th>Success Rate</th>
+                      <th>Trend</th>
+                      <th style={{ textAlign: 'right' }}>Actions</th>
                     </tr>
-                  ) : (
-                    paginated.map((p, idx) => {
-                      const isSuccess = (p.status ?? '').toLowerCase() === 'success';
-                      const isFailed = (p.status ?? '').toLowerCase() === 'failed';
-                      const progressColor = isSuccess ? 'green' : isFailed ? 'red' : 'orange';
-                      const rate = p.success_rate != null ? parseFloat(p.success_rate) : (isSuccess ? 100 : 0);
-                      const src = p.source_tool ?? p.source_system ?? 'Snowflake';
-                      const dst = p.target_tool ?? p.target_system ?? 'Snowflake';
-                      const lastRunDate = p.last_run_at ? new Date(p.last_run_at).toLocaleString([], { month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : 'Aug 17, 2026 11:25 AM';
-                      const timeAgo = fmtTimeAgo(p.last_run_at);
+                  </thead>
+                  <tbody>
+                    {paginated.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: 32, color: 'var(--text-muted)' }}>
+                          No pipelines match the selected filters.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginated.map((p, idx) => {
+                        const status = (p.status ?? 'Success').toLowerCase();
+                        const isSuccess = status === 'success' || status === 'completed';
+                        const rateNum = p.success_rate_num ?? 100;
+                        const isMenuOpen = activeMenu === (p.pipeline_id || p.pipeline_name || idx);
 
-                      return (
-                        <tr key={p.pipeline_id ?? idx}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                              <DBLogo tool={p.etl_tool} source={src} />
-                              <div>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 13 }}>
-                                  {p.pipeline_name}
+                        return (
+                          <tr key={p.pipeline_id || p.pipeline_name || idx}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                                <div style={{
+                                  width: 28, height: 28, borderRadius: 6,
+                                  background: 'var(--bg-card-subtle)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  color: '#F59E0B', border: '1px solid var(--border)'
+                                }}>
+                                  <Server size={14} />
                                 </div>
-                                <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1 }}>
-                                  {src} → {dst} {p.etl_tool ? `(${p.etl_tool})` : ''}
+                                <div>
+                                  <div style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
+                                    {p.pipeline_name}
+                                  </div>
+                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
+                                    {p.source_tool || 'snowflake'} &rarr; {p.target_tool || 'snowflake'} ({p.etl_tool || 'dbt'})
+                                  </div>
                                 </div>
                               </div>
-                            </div>
-                          </td>
-                          <td>
-                            <span className={`status-pill ${p.status?.toLowerCase() ?? 'success'}`}>
-                              {p.status ?? 'Success'}
-                            </span>
-                          </td>
-                          <td>
-                            <div style={{ fontSize: 12.5, fontWeight: 500 }}>{lastRunDate}</div>
-                            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>{timeAgo}</div>
-                          </td>
-                          <td style={{ fontSize: 12.5, fontWeight: 500 }}>{fmtDuration(p.avg_duration_seconds)}</td>
-                          <td style={{ fontSize: 12.5, fontWeight: 600 }}>{p.total_runs ?? p.runs ?? 1}</td>
-                          <td style={{ minWidth: 120 }}>
-                            <div style={{ fontSize: 12.5, fontWeight: 600, color: isFailed ? '#EF4444' : '#0F172A' }}>
-                              {rate.toFixed(1)}%
-                            </div>
-                            <div className="progress-track">
-                              <div
-                                className={`progress-fill ${progressColor}`}
-                                style={{ width: `${Math.min(rate, 100)}%` }}
-                              />
-                            </div>
-                          </td>
-                          <td style={{ width: 100 }}>
-                            <div style={{ width: 80, height: 26 }}>
-                              <SparkLine color={isFailed ? '#EF4444' : '#10B981'} height={24} />
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <button className="icon-btn" style={{ width: 28, height: 28 }} title="View Metrics">
-                                <BarChart2 size={13} />
-                              </button>
-                              <button className="icon-btn" style={{ width: 28, height: 28 }} title="Options">
-                                <MoreVertical size={13} />
-                              </button>
-                            </div>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
-          )}
+                            </td>
+                            <td>
+                              <span className={`status-pill ${isSuccess ? 'success' : 'failed'}`}>
+                                {isSuccess ? 'Success' : 'Failed'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ fontSize: 12, fontWeight: 500 }}>{p.last_run_time}</div>
+                              <div style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>recently</div>
+                            </td>
+                            <td style={{ fontSize: 12, fontWeight: 500 }}>
+                              {fmtDuration(p.avg_duration_seconds)}
+                            </td>
+                            <td style={{ fontSize: 12.5, fontWeight: 600 }}>
+                              {p.total_runs ?? p.runs ?? 1}
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 3, minWidth: 100 }}>
+                                <span style={{
+                                  fontSize: 12,
+                                  fontWeight: 600,
+                                  color: isSuccess ? '#10B981' : '#EF4444'
+                                }}>
+                                  {p.success_rate}
+                                </span>
+                                <div className="progress-track" style={{ height: 4 }}>
+                                  <div
+                                    className="progress-fill"
+                                    style={{
+                                      width: `${Math.min(rateNum, 100)}%`,
+                                      background: isSuccess ? '#10B981' : '#EF4444'
+                                    }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+                            <td>
+                              <div style={{ width: 60, height: 20 }}>
+                                <SparkLine color={isSuccess ? '#10B981' : '#EF4444'} />
+                              </div>
+                            </td>
+                            <td style={{ textAlign: 'right', position: 'relative' }}>
+                              <div style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                                <button
+                                  className="icon-btn"
+                                  title="View Metrics"
+                                  onClick={() => navigate('/metrics')}
+                                  style={{ width: 28, height: 28 }}
+                                >
+                                  <Activity size={13} />
+                                </button>
+                                <button
+                                  className="icon-btn"
+                                  title="More Actions"
+                                  onClick={() => setActiveMenu(isMenuOpen ? null : (p.pipeline_id || p.pipeline_name || idx))}
+                                  style={{ width: 28, height: 28 }}
+                                >
+                                  <MoreVertical size={13} />
+                                </button>
+                              </div>
 
-          {/* Pagination */}
-          <div className="pagination-bar">
-            <span>
-              Showing {Math.min((page - 1) * perPage + 1, filtered.length)} to {Math.min(page * perPage, filtered.length)} of {filtered.length} pipelines
-            </span>
-            <div className="pagination-pages">
-              <button className="pagination-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>
-                ‹
-              </button>
-              {Array.from({ length: totalPages }, (_, i) => i + 1).map(p => (
-                <button
-                  key={p}
-                  className={`pagination-btn ${page === p ? 'active' : ''}`}
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </button>
-              ))}
-              <button className="pagination-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>
-                ›
-              </button>
-              <select
-                className="select-control"
-                style={{ marginLeft: 8, padding: '4px 8px' }}
-                value={perPage}
-                onChange={e => setPerPage(Number(e.target.value))}
-              >
-                <option value={10}>10 / page</option>
-                <option value={25}>25 / page</option>
-                <option value={50}>50 / page</option>
-              </select>
-            </div>
-          </div>
+                              {isMenuOpen && (
+                                <div style={{
+                                  position: 'absolute', right: 0, top: '100%',
+                                  background: 'var(--bg-card)', border: '1px solid var(--border)',
+                                  borderRadius: 8, boxShadow: '0 8px 24px rgba(0,0,0,0.12)',
+                                  zIndex: 50, minWidth: 140, padding: 4, textAlign: 'left'
+                                }}>
+                                  <button
+                                    className="nav-link"
+                                    style={{ padding: '6px 10px', fontSize: 12 }}
+                                    onClick={() => { setActiveMenu(null); navigate('/lineage'); }}
+                                  >
+                                    <GitBranch size={13} /> View Lineage
+                                  </button>
+                                  <button
+                                    className="nav-link"
+                                    style={{ padding: '6px 10px', fontSize: 12 }}
+                                    onClick={() => { setActiveMenu(null); navigate('/logs'); }}
+                                  >
+                                    <ExternalLink size={13} /> View Logs
+                                  </button>
+                                </div>
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              <div className="pagination-bar">
+                <div style={{ color: 'var(--text-secondary)' }}>
+                  Showing {filtered.length === 0 ? 0 : (page - 1) * perPage + 1} to {Math.min(page * perPage, filtered.length)} of {filtered.length} pipelines
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <select
+                    className="select-control"
+                    value={perPage}
+                    onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                    style={{ fontSize: 11.5, padding: '3px 8px' }}
+                  >
+                    <option value={10}>10 / page</option>
+                    <option value={25}>25 / page</option>
+                    <option value={50}>50 / page</option>
+                  </select>
+
+                  <div className="pagination-pages">
+                    <button
+                      className="pagination-btn"
+                      disabled={page === 1}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(pNum => (
+                      <button
+                        key={pNum}
+                        className={`pagination-btn ${pNum === page ? 'active' : ''}`}
+                        onClick={() => setPage(pNum)}
+                      >
+                        {pNum}
+                      </button>
+                    ))}
+                    <button
+                      className="pagination-btn"
+                      disabled={page === totalPages}
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                    >
+                      <ChevronRight size={13} />
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </>
+          )}
         </div>
       </div>
     </div>

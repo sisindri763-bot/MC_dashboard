@@ -53,17 +53,31 @@ export default function Sidebar() {
             const Icon = item.icon;
 
             if (item.children) {
-              const isChildActive = item.children.some(c => location.pathname === c.to);
+              const isChildActive = item.children.some(c => location.pathname === c.to) || location.pathname === item.to;
               return (
                 <li key={item.label} className="nav-item">
-                  <button
-                    className={`nav-link ${isChildActive ? 'active' : ''}`}
-                    onClick={() => setObsOpen(o => !o)}
-                  >
-                    <Icon size={16} />
-                    <span style={{ flex: 1 }}>{item.label}</span>
-                    {obsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
-                  </button>
+                  <div style={{ display: 'flex', alignItems: 'center', width: '100%', position: 'relative' }}>
+                    <NavLink
+                      to={item.to}
+                      className={({ isActive }) => `nav-link ${isActive || isChildActive ? 'active' : ''}`}
+                      style={{ flex: 1, paddingRight: 28 }}
+                      onClick={() => setObsOpen(true)}
+                    >
+                      <Icon size={16} />
+                      <span style={{ flex: 1 }}>{item.label}</span>
+                    </NavLink>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.preventDefault(); e.stopPropagation(); setObsOpen(o => !o); }}
+                      style={{
+                        position: 'absolute', right: 4, background: 'none', border: 'none',
+                        cursor: 'pointer', padding: '6px', color: 'var(--text-secondary)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center'
+                      }}
+                    >
+                      {obsOpen ? <ChevronDown size={14} /> : <ChevronRight size={14} />}
+                    </button>
+                  </div>
                   {obsOpen && (
                     <ul className="nav-sub">
                       {item.children.map(child => (
