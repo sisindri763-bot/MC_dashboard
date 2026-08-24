@@ -38,7 +38,7 @@ export default function Overview() {
   const [loading, setLoading] = useState(true);
 
   // Live state
-  const [kpisRaw, setKpisRaw] = useState([]);
+  const [kpiRaw, setKpiRaw] = useState(null);
   const [chartsData, setChartsData] = useState(null);
   const [healthData, setHealthData] = useState([]);
   const [incidentsList, setIncidentsList] = useState([]);
@@ -48,17 +48,16 @@ export default function Overview() {
     setLoading(true);
     try {
       const [kRes, cRes, hRes, incRes, pRes, allPipes] = await Promise.allSettled([
-        fetchOverviewKPIs({ preset: 'all' }),
-        fetchOverviewCharts({ preset: 'all' }),
-        fetchOverviewHealth({ preset: 'all' }),
-        fetchRecentIncidents({ preset: 'all' }),
-        fetchPipelineMonitoring({ preset: 'all' }),
-        fetchPipelines({ preset: 'all' }),
+        fetchOverviewKPIs(),
+        fetchOverviewCharts(),
+        fetchOverviewHealth(),
+        fetchRecentIncidents(),
+        fetchPipelineMonitoring(),
+        fetchPipelines(),
       ]);
 
       if (kRes.status === 'fulfilled' && kRes.value) {
-        const raw = kRes.value.kpis || (Array.isArray(kRes.value) ? kRes.value : []);
-        setKpisRaw(raw);
+        setKpiRaw(kRes.value);
       }
 
       if (cRes.status === 'fulfilled' && cRes.value) {
@@ -66,7 +65,7 @@ export default function Overview() {
       }
 
       if (hRes.status === 'fulfilled' && hRes.value) {
-        const pillars = hRes.value.items || hRes.value.pillars || hRes.value.health || [];
+        const pillars = hRes.value.pillars || hRes.value.items || hRes.value.health || [];
         setHealthData(pillars.map(p => ({
           name: p.name || p.title || p.id,
           pct: parseFloat(p.score ?? p.value ?? (p.status === 'Good' ? 100 : 0)),
@@ -77,19 +76,19 @@ export default function Overview() {
       }
 
       if (incRes.status === 'fulfilled' && incRes.value) {
-        const incs = incRes.value.items || incRes.value.incidents || [];
+        const incs = incRes.value.incidents || incRes.value.items || [];
         setIncidentsList(incs.slice(0, 5).map(inc => ({
           title: inc.title ?? inc.pipeline_name ?? 'Pipeline execution issue',
           desc: inc.description ?? inc.error_message ?? 'Execution error detected',
           severity: inc.severity ?? 'Critical',
           state: inc.state ?? inc.status ?? 'OPEN',
-          time: inc.opened_age ?? (inc.opened_at ? new Date(inc.opened_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'recently')
+          time: inc.opened_age ?? (inc.opened_at || inc.start_time ? new Date(inc.opened_at || inc.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'recently')
         })));
       }
 
       // Merge pipelines
-      const rawPipes = (pRes.status === 'fulfilled' ? (pRes.value.items || pRes.value.pipelines) : null) ||
-                       (allPipes.status === 'fulfilled' ? (allPipes.value.items || allPipes.value.pipelines) : null) || [];
+      const rawPipes = (pRes.status === 'fulfilled' ? (pRes.value.pipelines || pRes.value.items) : null) ||
+                       (allPipes.status === 'fulfilled' ? (allPipes.value.pipelines || allPipes.value.items) : null) || [];
 
       if (rawPipes.length > 0) {
         setPipelinesList(rawPipes.map(p => ({
@@ -101,7 +100,7 @@ export default function Overview() {
         })));
       }
     } catch (e) {
-      console.error('Failed to load live overview data from new API:', e);
+      console.error('Failed to load live overview data:', e);
     } finally {
       setLoading(false);
     }
@@ -117,31 +116,23 @@ export default function Overview() {
       const names = new Set(pipelinesList.map(p => p.name).filter(Boolean));
       return names.size || pipelinesList.length;
     }
-    const kpiItem = kpisRaw.find(k => k.id === 'total_pipelines');
-    return kpiItem?.value ?? 4;
-  }, [pipelinesList, kpisRaw]);
+    return kpiRaw?.totalPipelines?.value || 3;
+  }, [pipelinesList, kpiRaw]);
 
   // KPIs assembled directly from live API
   const kpis = useMemo(() => {
-    const findKpi = (id) => kpisRaw.find(k => k.id === id);
-
-    const totalKpi = findKpi('total_pipelines');
-    const successKpi = findKpi('success_rate');
-    const failedKpi = findKpi('failed_runs');
-    const durationKpi = findKpi('avg_duration');
-    const incidentKpi = findKpi('active_incidents');
-
-    const successVal = successKpi?.display || (successKpi?.value != null ? `${successKpi.value}%` : 'N/A');
-    const failedVal = failedKpi?.display || (failedKpi?.value != null ? String(failedKpi.value) : '0');
-    const durationVal = durationKpi?.display || (durationKpi?.value != null ? `${durationKpi.value}s` : 'N/A');
-    const incidentVal = incidentKpi?.display || (incidentKpi?.value != null ? String(incidentKpi.value) : String(incidentsList.length));
+    const k = kpiRaw || {};
+    const successVal = k.successfulRuns?.value ?? (k.kpis?.find(x => x.id === 'success_rate')?.display) ?? 'N/A';
+    const failedVal = k.failedRuns?.value != null ? String(k.failedRuns.value) : ((k.kpis?.find(x => x.id === 'failed_runs')?.display) ?? '0');
+    const durationVal = k.avgDuration?.value ?? (k.kpis?.find(x => x.id === 'avg_duration')?.display) ?? 'N/A';
+    const incidentVal = k.activeIncidents?.value != null ? String(k.activeIncidents.value) : ((k.kpis?.find(x => x.id === 'active_incidents')?.display) ?? String(incidentsList.length));
 
     return [
       {
         icon: GitBranch,
         label: 'Total Pipelines',
         value: String(uniquePipelinesCount),
-        delta: totalKpi?.delta_label || `${uniquePipelinesCount} unique models registered`,
+        delta: k.totalPipelines?.change || `${uniquePipelinesCount} unique models registered`,
         isUp: true,
         color: '#6366F1',
         bg: '#EEF2FF'
@@ -150,7 +141,7 @@ export default function Overview() {
         icon: CheckCircle,
         label: 'Successful Runs',
         value: successVal,
-        delta: successKpi?.delta_label || 'total runs passed',
+        delta: k.successfulRuns?.change || 'total runs passed',
         isUp: parseFloat(successVal) > 70,
         color: '#10B981',
         bg: '#ECFDF5'
@@ -159,7 +150,7 @@ export default function Overview() {
         icon: XCircle,
         label: 'Failed Runs',
         value: failedVal,
-        delta: failedKpi?.delta_label || `${failedVal} execution failures`,
+        delta: k.failedRuns?.change || `${failedVal} execution failures`,
         isUp: false,
         color: '#EF4444',
         bg: '#FEF2F2'
@@ -168,7 +159,7 @@ export default function Overview() {
         icon: Clock,
         label: 'Avg. Pipeline Duration',
         value: durationVal,
-        delta: durationKpi?.delta_label || 'average execution time',
+        delta: k.avgDuration?.change || 'average execution time',
         isUp: true,
         color: '#3B82F6',
         bg: '#EFF6FF'
@@ -177,19 +168,19 @@ export default function Overview() {
         icon: AlertTriangle,
         label: 'Active Incidents',
         value: incidentVal,
-        delta: incidentKpi?.delta_label || `${incidentVal} requiring attention`,
+        delta: k.activeIncidents?.change || `${incidentVal} requiring attention`,
         isUp: false,
         color: '#8B5CF6',
         bg: '#F5F3FF'
       },
     ];
-  }, [kpisRaw, uniquePipelinesCount, incidentsList]);
+  }, [kpiRaw, uniquePipelinesCount, incidentsList]);
 
-  // Chart 1: Live Runs Over Time from new API
+  // Chart 1: Live Runs Over Time
   const runsChart = useMemo(() => {
-    const charts = chartsData?.charts || chartsData?.series || {};
-    const labels = charts.labels || charts.runs_over_time?.labels || [];
-    const runs = charts.runs_over_time || {};
+    const charts = chartsData || {};
+    const labels = charts.labels || charts.charts?.labels || [];
+    const runs = charts.runsOverTime || charts.runs_over_time || charts.charts?.runs_over_time || {};
 
     return labels.map((lbl, i) => {
       const formattedLabel = typeof lbl === 'string' && lbl.includes('-')
@@ -205,11 +196,11 @@ export default function Overview() {
     });
   }, [chartsData]);
 
-  // Chart 2: Live Success Rate Over Time from new API
+  // Chart 2: Live Success Rate Over Time
   const successChart = useMemo(() => {
-    const charts = chartsData?.charts || chartsData?.series || {};
-    const labels = charts.labels || charts.runs_over_time?.labels || [];
-    const successRates = charts.success_rate_over_time || [];
+    const charts = chartsData || {};
+    const labels = charts.labels || charts.charts?.labels || [];
+    const successRates = charts.successRateOverTime || charts.success_rate_over_time || charts.charts?.success_rate_over_time || [];
 
     return labels.map((lbl, i) => {
       const formattedLabel = typeof lbl === 'string' && lbl.includes('-')
@@ -223,11 +214,11 @@ export default function Overview() {
     });
   }, [chartsData]);
 
-  // Chart 3: Live Incidents Over Time from new API
+  // Chart 3: Live Incidents Over Time
   const incChart = useMemo(() => {
-    const charts = chartsData?.charts || chartsData?.series || {};
-    const labels = charts.labels || charts.incidents_over_time?.labels || [];
-    const incidents = charts.incidents_over_time || {};
+    const charts = chartsData || {};
+    const labels = charts.labels || charts.charts?.labels || [];
+    const incidents = charts.incidentsOverTime || charts.incidents_over_time || charts.charts?.incidents_over_time || {};
 
     return labels.map((lbl, i) => {
       const formattedLabel = typeof lbl === 'string' && lbl.includes('-')
@@ -250,7 +241,7 @@ export default function Overview() {
         onRefresh={loadData}
       />
 
-      {loading && !kpisRaw.length ? (
+      {loading && !kpiRaw ? (
         <LoadingSpinner />
       ) : (
         <div className="page-body">

@@ -4,7 +4,7 @@ export const getBaseUrl = () => {
   if (typeof window !== 'undefined' && localStorage.getItem('API_BASE_URL')) {
     return localStorage.getItem('API_BASE_URL');
   }
-  return import.meta.env.VITE_API_BASE_URL || 'https://etl-pipeline-lemon.vercel.app';
+  return import.meta.env.VITE_API_BASE_URL || 'https://vithi-observability-dasboard.vercel.app';
 };
 
 const api = axios.create({
@@ -13,72 +13,82 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Request interceptor to dynamically use current Base URL
 api.interceptors.request.use((config) => {
   config.baseURL = getBaseUrl();
   return config;
 });
 
-// Helper to normalize query params with preset='all' default
-const withPreset = (params = {}) => ({ preset: 'all', ...params });
+// Helper for resilient GET requests (tries path then fallback path if 404)
+const safeGet = async (path, fallbackPath, params = {}) => {
+  try {
+    const res = await api.get(path, { params });
+    return res.data;
+  } catch (err) {
+    if (err.response && err.response.status === 404 && fallbackPath) {
+      const resFallback = await api.get(fallbackPath, { params });
+      return resFallback.data;
+    }
+    throw err;
+  }
+};
 
 // ── Overview ────────────────────────────────────────────────────────────────
 export const fetchOverviewKPIs = (params = {}) =>
-  api.get('/api/v1/overview/kpis', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/overview/kpis', '/api/v1/overview/kpis', params);
 
 export const fetchOverviewCharts = (params = {}) =>
-  api.get('/api/v1/overview/charts', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/overview/charts', '/api/v1/overview/charts', params);
 
 export const fetchOverviewHealth = (params = {}) =>
-  api.get('/api/v1/overview/health', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/overview/health', '/api/v1/overview/health', params);
 
 export const fetchRecentIncidents = (params = {}) =>
-  api.get('/api/v1/overview/recent-incidents', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/overview/recent-incidents', '/api/v1/overview/recent-incidents', params);
 
 export const fetchPipelineMonitoring = (params = {}) =>
-  api.get('/api/v1/overview/pipelines', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/overview/pipeline-monitoring', '/api/v1/overview/pipelines', params);
 
 // ── Pipelines ────────────────────────────────────────────────────────────────
 export const fetchPipelines = (params = {}) =>
-  api.get('/api/v1/pipelines', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/pipelines', '/api/v1/pipelines', params);
 
 export const fetchPipelineRuns = (pid, params = {}) =>
-  api.get(`/api/v1/pipelines/${pid}/runs`, { params: withPreset(params) }).then(r => r.data);
+  safeGet(`/api/pipelines/${pid}/runs`, `/api/v1/pipelines/${pid}/runs`, params);
 
 // ── Data Observability ───────────────────────────────────────────────────────
 export const fetchFreshness = (params = {}) =>
-  api.get('/api/v1/observability/freshness', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/observability/freshness', '/api/v1/observability/freshness', params);
 
 export const fetchVolume = (params = {}) =>
-  api.get('/api/v1/observability/volume', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/observability/volume', '/api/v1/observability/volume', params);
 
 export const fetchSchema = (params = {}) =>
-  api.get('/api/v1/observability/schema', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/observability/schema', '/api/v1/observability/schema', params);
 
 export const fetchDataQuality = (params = {}) =>
-  api.get('/api/v1/observability/quality', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/observability/data-quality', '/api/v1/observability/quality', params);
 
 export const fetchMetrics = (params = {}) =>
-  api.get('/api/v1/metrics', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/observability/metrics', '/api/v1/metrics', params);
 
 // ── Lineage ──────────────────────────────────────────────────────────────────
 export const fetchLineage = (params = {}) =>
-  api.get('/api/v1/lineage', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/lineage', '/api/v1/lineage', params);
 
 // ── Incidents ────────────────────────────────────────────────────────────────
 export const fetchIncidents = (params = {}) =>
-  api.get('/api/v1/incidents', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/incidents', '/api/v1/incidents', params);
 
 // ── Logs ─────────────────────────────────────────────────────────────────────
 export const fetchLogs = (params = {}) =>
-  api.get('/api/v1/logs', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/logs', '/api/v1/logs', params);
 
 export const fetchRunDetail = (runId) =>
-  api.get(`/api/v1/runs/${runId}`).then(r => r.data);
+  safeGet(`/api/runs/${runId}`, `/api/v1/runs/${runId}`);
 
 // ── Alerts ───────────────────────────────────────────────────────────────────
 export const fetchAlerts = (params = {}) =>
-  api.get('/api/v1/alerts', { params: withPreset(params) }).then(r => r.data);
+  safeGet('/api/alerts', '/api/v1/alerts', params).catch(() => ({ items: [] }));
 
 // ── Convenience aliases ───────────────────────────────────────────────────────
 export const fetchHealth = fetchOverviewHealth;
