@@ -123,25 +123,25 @@ export default function Overview() {
 
   // KPIs assembled directly from live API
   const kpis = useMemo(() => {
-    const findKpi = (id, fallback) => kpisRaw.find(k => k.id === id) || fallback;
+    const findKpi = (id) => kpisRaw.find(k => k.id === id);
 
-    const totalKpi = findKpi('total_pipelines', { display: String(uniquePipelinesCount) });
-    const successKpi = findKpi('success_rate', { display: '76.3%' });
-    const failedKpi = findKpi('failed_runs', { display: '9' });
-    const durationKpi = findKpi('avg_duration', { display: '13s' });
-    const incidentKpi = findKpi('active_incidents', { display: String(incidentsList.length || 1) });
+    const totalKpi = findKpi('total_pipelines');
+    const successKpi = findKpi('success_rate');
+    const failedKpi = findKpi('failed_runs');
+    const durationKpi = findKpi('avg_duration');
+    const incidentKpi = findKpi('active_incidents');
 
-    const successVal = successKpi.display !== 'N/A' ? successKpi.display : '76.3%';
-    const failedVal = failedKpi.display !== 'N/A' ? failedKpi.display : '9';
-    const durationVal = durationKpi.display !== 'N/A' ? durationKpi.display : '13s';
-    const incidentVal = incidentKpi.display !== 'N/A' ? incidentKpi.display : String(incidentsList.length || 1);
+    const successVal = successKpi?.display || (successKpi?.value != null ? `${successKpi.value}%` : 'N/A');
+    const failedVal = failedKpi?.display || (failedKpi?.value != null ? String(failedKpi.value) : '0');
+    const durationVal = durationKpi?.display || (durationKpi?.value != null ? `${durationKpi.value}s` : 'N/A');
+    const incidentVal = incidentKpi?.display || (incidentKpi?.value != null ? String(incidentKpi.value) : String(incidentsList.length));
 
     return [
       {
         icon: GitBranch,
         label: 'Total Pipelines',
         value: String(uniquePipelinesCount),
-        delta: `${uniquePipelinesCount} unique models registered`,
+        delta: totalKpi?.delta_label || `${uniquePipelinesCount} unique models registered`,
         isUp: true,
         color: '#6366F1',
         bg: '#EEF2FF'
@@ -149,8 +149,8 @@ export default function Overview() {
       {
         icon: CheckCircle,
         label: 'Successful Runs',
-        value: successVal.includes('%') ? successVal : `${successVal}%`,
-        delta: '29/38 total runs passed',
+        value: successVal,
+        delta: successKpi?.delta_label || 'total runs passed',
         isUp: parseFloat(successVal) > 70,
         color: '#10B981',
         bg: '#ECFDF5'
@@ -158,8 +158,8 @@ export default function Overview() {
       {
         icon: XCircle,
         label: 'Failed Runs',
-        value: String(failedVal),
-        delta: `${failedVal} execution failures`,
+        value: failedVal,
+        delta: failedKpi?.delta_label || `${failedVal} execution failures`,
         isUp: false,
         color: '#EF4444',
         bg: '#FEF2F2'
@@ -168,7 +168,7 @@ export default function Overview() {
         icon: Clock,
         label: 'Avg. Pipeline Duration',
         value: durationVal,
-        delta: 'average execution time',
+        delta: durationKpi?.delta_label || 'average execution time',
         isUp: true,
         color: '#3B82F6',
         bg: '#EFF6FF'
@@ -176,8 +176,8 @@ export default function Overview() {
       {
         icon: AlertTriangle,
         label: 'Active Incidents',
-        value: String(incidentVal),
-        delta: `${incidentVal} requiring attention`,
+        value: incidentVal,
+        delta: incidentKpi?.delta_label || `${incidentVal} requiring attention`,
         isUp: false,
         color: '#8B5CF6',
         bg: '#F5F3FF'
@@ -188,7 +188,7 @@ export default function Overview() {
   // Chart 1: Live Runs Over Time from new API
   const runsChart = useMemo(() => {
     const charts = chartsData?.charts || chartsData?.series || {};
-    const labels = charts.labels || charts.runs_over_time?.labels || ['Jul 24', 'Aug 03', 'Aug 05', 'Aug 06', 'Aug 07', 'Aug 10', 'Aug 14', 'Aug 17'];
+    const labels = charts.labels || charts.runs_over_time?.labels || [];
     const runs = charts.runs_over_time || {};
 
     return labels.map((lbl, i) => {
@@ -198,8 +198,8 @@ export default function Overview() {
 
       return {
         time: formattedLabel,
-        Success: (runs.success ?? [1, 9, 4, 0, 0, 1, 1, 13])[i] ?? 0,
-        Failed: (runs.failed ?? [0, 0, 0, 1, 1, 5, 0, 2])[i] ?? 0,
+        Success: (runs.success ?? [])[i] ?? 0,
+        Failed: (runs.failed ?? [])[i] ?? 0,
         Running: (runs.running ?? [])[i] ?? 0,
       };
     });
@@ -208,8 +208,8 @@ export default function Overview() {
   // Chart 2: Live Success Rate Over Time from new API
   const successChart = useMemo(() => {
     const charts = chartsData?.charts || chartsData?.series || {};
-    const labels = charts.labels || charts.runs_over_time?.labels || ['Jul 24', 'Aug 03', 'Aug 05', 'Aug 06', 'Aug 07', 'Aug 10', 'Aug 14', 'Aug 17'];
-    const successRates = charts.success_rate_over_time || [100, 100, 100, 0, 0, 16.7, 100, 86.7];
+    const labels = charts.labels || charts.runs_over_time?.labels || [];
+    const successRates = charts.success_rate_over_time || [];
 
     return labels.map((lbl, i) => {
       const formattedLabel = typeof lbl === 'string' && lbl.includes('-')
@@ -226,7 +226,7 @@ export default function Overview() {
   // Chart 3: Live Incidents Over Time from new API
   const incChart = useMemo(() => {
     const charts = chartsData?.charts || chartsData?.series || {};
-    const labels = charts.labels || charts.incidents_over_time?.labels || ['Jul 24', 'Aug 03', 'Aug 05', 'Aug 06', 'Aug 07', 'Aug 10', 'Aug 14', 'Aug 17'];
+    const labels = charts.labels || charts.incidents_over_time?.labels || [];
     const incidents = charts.incidents_over_time || {};
 
     return labels.map((lbl, i) => {
@@ -236,7 +236,7 @@ export default function Overview() {
 
       return {
         time: formattedLabel,
-        High: (incidents.high ?? [0, 0, 0, 1, 1, 5, 0, 2])[i] ?? 0,
+        High: (incidents.high ?? [])[i] ?? 0,
         Medium: (incidents.medium ?? [])[i] ?? 0,
       };
     });
