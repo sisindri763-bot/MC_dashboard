@@ -41,9 +41,9 @@ export default function Freshness() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetchFreshness({ sla_minutes: 60 });
+      const res = await fetchFreshness({ preset: 'all' });
       if (res) {
-        const list = res.freshness_checks ?? (Array.isArray(res) ? res : res.datasets ?? []);
+        const list = res.items || res.freshness_checks || (Array.isArray(res) ? res : res.datasets || []);
         setData(list);
         if (res.summary) {
           setSummary(res.summary);

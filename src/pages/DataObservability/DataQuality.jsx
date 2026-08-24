@@ -39,9 +39,9 @@ export default function DataQuality() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetchDataQuality();
+      const res = await fetchDataQuality({ preset: 'all' });
       if (res) {
-        const list = res.checks ?? (Array.isArray(res) ? res : res.results ?? []);
+        const list = res.items || res.checks || (Array.isArray(res) ? res : res.results || []);
         setData(list);
         if (res.summary) {
           setSummary(res.summary);

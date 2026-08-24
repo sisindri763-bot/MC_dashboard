@@ -26,9 +26,12 @@ export default function Logs() {
   const loadLogs = async () => {
     setLoading(true);
     try {
-      const res = await fetchLogs({ limit: 100 });
-      setLogs(res.logs || []);
-      setTotalCount(res.pagination?.total || res.logs?.length || 0);
+      const res = await fetchLogs({ preset: 'all', limit: 100 });
+      if (res) {
+        const list = res.items || res.logs || (Array.isArray(res) ? res : []);
+        setLogs(list);
+        setTotalCount(res.pagination?.total || list.length);
+      }
     } catch (e) {
       console.error('Error fetching live logs:', e);
     } finally {

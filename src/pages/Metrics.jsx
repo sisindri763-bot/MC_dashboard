@@ -39,13 +39,14 @@ export default function Metrics() {
     setLoading(true);
     try {
       const [m, c, p] = await Promise.all([
-        fetchMetrics(),
-        fetchOverviewCharts(),
-        fetchPipelines()
+        fetchMetrics({ preset: 'all' }),
+        fetchOverviewCharts({ preset: 'all' }),
+        fetchPipelines({ preset: 'all' })
       ]);
       setMetricsData(m);
       setChartsData(c);
-      setPipelines(p?.pipelines || []);
+      const pipes = p?.items || p?.pipelines || (Array.isArray(p) ? p : []);
+      setPipelines(pipes);
     } catch (e) {
       console.error('Error loading live metrics data:', e);
     } finally {

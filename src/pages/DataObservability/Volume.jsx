@@ -40,12 +40,12 @@ export default function Volume() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetchVolume();
+      const res = await fetchVolume({ preset: 'all' });
       if (res) {
-        const list = res.volume_checks ?? (Array.isArray(res) ? res : res.datasets ?? []);
+        const list = res.items || res.volume_checks || (Array.isArray(res) ? res : res.datasets || []);
         setData(list);
-        setTotalChecks(res.total_checks ?? list.length);
-        setAnomalies(res.anomalies_detected ?? list.filter(v => v.status === 'failed' || (v.row_drop_pct ?? 0) > 20).length);
+        setTotalChecks(res.pagination?.total ?? res.total_checks ?? list.length);
+        setAnomalies(res.anomalies_detected ?? list.filter(v => (v.status || '').toLowerCase() === 'failed' || (v.row_drop_pct ?? 0) > 20).length);
       }
     } catch (e) {
       console.error('Failed to load volume checks:', e);

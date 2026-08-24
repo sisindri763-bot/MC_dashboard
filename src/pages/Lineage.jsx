@@ -23,11 +23,11 @@ export default function Lineage() {
     setLoading(true);
     try {
       const [lin, p] = await Promise.all([
-        fetchLineage(),
-        fetchPipelines()
+        fetchLineage({ preset: 'all' }),
+        fetchPipelines({ preset: 'all' })
       ]);
       setLineageData(lin);
-      const pipes = p?.pipelines || [];
+      const pipes = p?.items || p?.pipelines || (Array.isArray(p) ? p : []);
       setPipelines(pipes);
       if (pipes.length > 0) {
         setSelectedPipeline(pipes[0]);

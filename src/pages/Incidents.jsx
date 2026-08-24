@@ -23,11 +23,12 @@ export default function Incidents() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetchRecentIncidents();
-      if (res && res.incidents) {
-        setIncidents(res.incidents);
-        setOpenCount(res.open_incidents ?? res.incidents.filter(i => i.state === 'OPEN').length);
-        setResolvedCount(res.resolved_incidents ?? res.incidents.filter(i => i.state === 'RESOLVED').length);
+      const res = await fetchRecentIncidents({ preset: 'all' });
+      if (res) {
+        const incList = res.items || res.incidents || (Array.isArray(res) ? res : []);
+        setIncidents(incList);
+        setOpenCount(res.open_incidents ?? incList.filter(i => (i.state || i.status || '').toLowerCase() === 'open').length);
+        setResolvedCount(res.resolved_incidents ?? incList.filter(i => (i.state || i.status || '').toLowerCase() === 'resolved').length);
       }
     } catch (e) {
       console.error('Failed to load incidents:', e);

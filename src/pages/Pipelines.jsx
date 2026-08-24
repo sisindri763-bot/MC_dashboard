@@ -59,8 +59,8 @@ export default function Pipelines() {
     setLoading(true);
     try {
       const res = await fetchPipelines();
-      if (res && (res.pipelines?.length || Array.isArray(res))) {
-        const list = Array.isArray(res) ? res : res.pipelines;
+      if (res) {
+        const list = res.items || res.pipelines || (Array.isArray(res) ? res : []);
         setPipelines(list);
       }
     } catch (e) {
