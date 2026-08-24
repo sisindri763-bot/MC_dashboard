@@ -1,9 +1,14 @@
 import { LineChart, Line, ResponsiveContainer, Tooltip } from 'recharts';
 
-export default function SparkLine({ data = [], color = '#6C63FF', height = 36 }) {
-  const points = Array.isArray(data) && data.length > 0
-    ? data.map((v, i) => ({ i, v: typeof v === 'object' ? (v.value ?? v.count ?? 0) : v }))
-    : Array.from({ length: 10 }, (_, i) => ({ i, v: 50 + Math.random() * 30 }));
+export default function SparkLine({ data = [], color = '#10B981', height = 36 }) {
+  if (!Array.isArray(data) || data.length === 0) {
+    return <div style={{ height }} />;
+  }
+
+  const points = data.map((v, i) => ({
+    i,
+    v: typeof v === 'object' ? (v.value ?? v.count ?? v.rate ?? 0) : Number(v) || 0
+  }));
 
   return (
     <ResponsiveContainer width="100%" height={height}>
@@ -17,8 +22,8 @@ export default function SparkLine({ data = [], color = '#6C63FF', height = 36 })
           isAnimationActive={false}
         />
         <Tooltip
-          contentStyle={{ background: '#1E2130', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 6, fontSize: 11 }}
-          itemStyle={{ color: '#E8EAF6' }}
+          contentStyle={{ background: '#FFFFFF', border: '1px solid #E2E8F0', borderRadius: 6, fontSize: 11, color: '#0F172A' }}
+          itemStyle={{ color: '#0F172A' }}
           formatter={(v) => [typeof v === 'number' ? v.toFixed(1) : v]}
           labelFormatter={() => ''}
         />

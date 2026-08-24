@@ -40,10 +40,10 @@ export default function ObsOverview() {
   // Live state
   const [healthPillars, setHealthPillars] = useState([]);
   const [freshnessChecks, setFreshnessChecks] = useState([]);
-  const [freshnessSummary, setFreshnessSummary] = useState({ total_assets: 79, fresh_count: 0, delayed_count: 0, stale_count: 79 });
+  const [freshnessSummary, setFreshnessSummary] = useState({ total_assets: 0, fresh_count: 0, delayed_count: 0, stale_count: 0 });
   const [volumeData, setVolumeData] = useState([]);
-  const [qualitySummary, setQualitySummary] = useState({ total_checks: 4, passed_checks: 0, failed_checks: 4 });
-  const [schemaSummary, setSchemaSummary] = useState({ monitored: 4, drift_events: 0 });
+  const [qualitySummary, setQualitySummary] = useState({ total_checks: 0, passed_checks: 0, failed_checks: 0 });
+  const [schemaSummary, setSchemaSummary] = useState({ monitored: 0, drift_events: 0 });
   const [incidents, setIncidents] = useState([]);
 
   const loadData = async () => {
@@ -51,34 +51,45 @@ export default function ObsOverview() {
     try {
       const [hRes, fRes, vRes, qRes, sRes, incRes] = await Promise.allSettled([
         fetchOverviewHealth(),
-        fetchFreshness({ sla_minutes: 60 }),
+        fetchFreshness(),
         fetchVolume(),
         fetchDataQuality(),
         fetchSchema(),
         fetchRecentIncidents()
       ]);
 
-      if (hRes.status === 'fulfilled' && hRes.value?.pillars) {
-        setHealthPillars(hRes.value.pillars);
+      if (hRes.status === 'fulfilled' && hRes.value) {
+        const pillars = hRes.value.pillars || hRes.value.items || [];
+        setHealthPillars(pillars);
       }
 
       if (fRes.status === 'fulfilled' && fRes.value) {
-        setFreshnessChecks(fRes.value.freshness_checks ?? []);
+        const list = fRes.value.freshness_checks || fRes.value.items || [];
+        setFreshnessChecks(list);
         if (fRes.value.summary) setFreshnessSummary(fRes.value.summary);
       }
 
       if (vRes.status === 'fulfilled' && vRes.value) {
-        setVolumeData(vRes.value.volume_checks ?? []);
+        setVolumeData(vRes.value.volume_checks || vRes.value.items || []);
       }
 
-      if (qRes.status === 'fulfilled' && qRes.value?.summary) {
-        setQualitySummary(qRes.value.summary);
+      if (qRes.status === 'fulfilled' && qRes.value) {
+        const qList = qRes.value.checks || qRes.value.items || [];
+        if (qRes.value.summary) {
+          setQualitySummary(qRes.value.summary);
+        } else {
+          setQualitySummary({
+            total_checks: qList.length,
+            passed_checks: qList.filter(c => (c.status || '').toLowerCase() === 'passed').length,
+            failed_checks: qList.filter(c => (c.status || '').toLowerCase() === 'failed').length,
+          });
+        }
       }
 
       if (sRes.status === 'fulfilled' && sRes.value) {
         setSchemaSummary({
-          monitored: sRes.value.total_datasets_monitored ?? 4,
-          drift_events: sRes.value.total_drift_events ?? 0
+          monitored: sRes.value.total_datasets_monitored || sRes.value.items?.length || 0,
+          drift_events: sRes.value.total_drift_events || 0
         });
       }
 

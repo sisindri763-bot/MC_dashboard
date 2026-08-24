@@ -81,13 +81,13 @@ export default function DataQuality() {
 
   const timeData = useMemo(() => {
     if (data.length === 0) {
-      return [{ time: 'Aug 17', score: passRate }];
+      return [];
     }
     return data.map((d, i) => ({
       time: d.start_time ? new Date(d.start_time).toLocaleDateString([], { month: 'short', day: 'numeric' }) : `Check ${i+1}`,
       score: (d.status ?? '').toLowerCase() === 'passed' ? 100 : 0
     })).reverse();
-  }, [data, passRate]);
+  }, [data]);
 
   const filtered = useMemo(() => {
     return data.filter(d => {

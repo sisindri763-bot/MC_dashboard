@@ -115,10 +115,10 @@ export default function Sidebar() {
       {/* Sidebar Footer */}
       <div className="sidebar-footer">
         <div className="sidebar-user">
-          <div className="user-avatar">SC</div>
+          <div className="user-avatar">DA</div>
           <div className="user-info">
-            <div className="name">Sai Charan</div>
-            <div className="role">Data Team</div>
+            <div className="name">Data Admin</div>
+            <div className="role">Workspace Owner</div>
           </div>
         </div>
 

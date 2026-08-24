@@ -5,7 +5,7 @@ import LoadingSpinner from '../../components/LoadingSpinner';
 import { fetchSchema, fetchPipelines } from '../../api/client';
 
 export default function Schema() {
-  const [monitored, setMonitored] = useState(4);
+  const [monitored, setMonitored] = useState(0);
   const [driftEvents, setDriftEvents] = useState([]);
   const [pipelines, setPipelines] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -20,11 +20,11 @@ export default function Schema() {
       ]);
 
       if (sRes.status === 'fulfilled' && sRes.value) {
-        setMonitored(sRes.value.total_datasets_monitored ?? 4);
-        setDriftEvents(sRes.value.schema_drift_events ?? []);
+        setMonitored(sRes.value.total_datasets_monitored ?? sRes.value.items?.length ?? 0);
+        setDriftEvents(sRes.value.schema_drift_events || sRes.value.items || []);
       }
       if (pRes.status === 'fulfilled' && pRes.value) {
-        setPipelines(Array.isArray(pRes.value) ? pRes.value : pRes.value.pipelines ?? []);
+        setPipelines(pRes.value.pipelines || pRes.value.items || (Array.isArray(pRes.value) ? pRes.value : []));
       }
     } catch (e) {
       console.error('Failed to load schema drift:', e);
