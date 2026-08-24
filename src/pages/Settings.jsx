@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { Settings as SettingsIcon, Sliders, Key, Bell, Users, Database, Globe, Check } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
+import { getBaseUrl } from '../api/client';
 
 export default function Settings() {
   const [saved, setSaved] = useState(false);
-  const [apiUrl, setApiUrl] = useState('https://vithi-observability-dasboard.vercel.app');
+  const [apiUrl, setApiUrl] = useState(getBaseUrl());
   const [slaTime, setSlaTime] = useState(60);
 
   const handleSave = (e) => {
     e.preventDefault();
+    localStorage.setItem('API_BASE_URL', apiUrl.trim());
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
   };
@@ -61,23 +63,39 @@ export default function Settings() {
             <div className="card-header">
               <span className="card-title">Connected Integrations</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-              {[
-                { name: 'Snowflake Data Warehouse', status: 'Connected', desc: 'us-east-1 production account' },
-                { name: 'Google BigQuery', status: 'Connected', desc: 'vithi-analytics-prod project' },
-                { name: 'AWS RDS MySQL', status: 'Connected', desc: 'Production transactional cluster' },
-                { name: 'PostgreSQL Database', status: 'Connected', desc: 'Auth & core service databases' },
-              ].map((conn, idx) => (
-                <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--bg-card-subtle)', borderRadius: 8 }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--bg-card-subtle)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Database size={18} style={{ color: '#38BDF8' }} />
                   <div>
-                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>{conn.name}</div>
-                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>{conn.desc}</div>
+                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>Snowflake DW</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Live Connection — Target & Source</div>
                   </div>
-                  <span className="status-pill good" style={{ fontSize: 10.5 }}>
-                    {conn.status}
-                  </span>
                 </div>
-              ))}
+                <span className="status-pill healthy">Connected</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--bg-card-subtle)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Sliders size={18} style={{ color: '#F97316' }} />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>dbt Core / Cloud</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Transform Engine Hook</div>
+                  </div>
+                </div>
+                <span className="status-pill healthy">Connected</span>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 12px', background: 'var(--bg-card-subtle)', borderRadius: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <Globe size={18} style={{ color: '#10B981' }} />
+                  <div>
+                    <div style={{ fontWeight: 600, fontSize: 12.5 }}>PostgreSQL Warehouse</div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>Active Warehouse Mirror</div>
+                  </div>
+                </div>
+                <span className="status-pill healthy">Connected</span>
+              </div>
             </div>
           </div>
         </div>

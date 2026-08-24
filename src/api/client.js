@@ -1,11 +1,22 @@
 import axios from 'axios';
 
-const BASE_URL = import.meta.env.VITE_API_BASE_URL || 'https://etl-pipeline-lemon.vercel.app';
+export const getBaseUrl = () => {
+  if (typeof window !== 'undefined' && localStorage.getItem('API_BASE_URL')) {
+    return localStorage.getItem('API_BASE_URL');
+  }
+  return import.meta.env.VITE_API_BASE_URL || 'https://etl-pipeline-lemon.vercel.app';
+};
 
 const api = axios.create({
-  baseURL: BASE_URL,
+  baseURL: getBaseUrl(),
   timeout: 30000,
   headers: { 'Content-Type': 'application/json' },
+});
+
+// Request interceptor to dynamically use current Base URL
+api.interceptors.request.use((config) => {
+  config.baseURL = getBaseUrl();
+  return config;
 });
 
 // Helper to normalize query params with preset='all' default
