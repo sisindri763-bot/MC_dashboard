@@ -116,41 +116,11 @@ export default function Metrics() {
 
   return (
     <div className="fade-in">
-      <header className="page-header">
-        <div className="page-header-left">
-          <h2>Metrics</h2>
-          <p>Real-time live operational metrics directly from backend</p>
-        </div>
-
-        <div className="page-header-right">
-          <div className="header-btn">
-            <select>
-              <option>Production</option>
-              <option>Staging</option>
-            </select>
-          </div>
-
-          <div className="live-indicator">
-            <span className="live-dot" />
-            <span>Live Sync</span>
-          </div>
-
-          <div className="header-btn">
-            <Calendar size={13} style={{ color: 'var(--text-secondary)' }} />
-            <span>Last 30 Days</span>
-          </div>
-
-          <button className="header-btn" onClick={loadData} title="Refresh live data">
-            <RefreshCw size={12} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          <button className="export-btn" onClick={() => window.print()}>
-            <Download size={13} />
-            <span>Export</span>
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="Metrics"
+        subtitle="Real-time live operational metrics and execution trends directly from backend."
+        onRefresh={loadData}
+      />
 
       {loading && !metricsData ? (
         <LoadingSpinner />

@@ -85,31 +85,11 @@ export default function Logs() {
 
   return (
     <div className="fade-in">
-      <header className="page-header">
-        <div className="page-header-left">
-          <h2>Logs</h2>
-          <p>Searchable live execution logs and query traces from all pipeline runs</p>
-        </div>
-
-        <div className="page-header-right">
-          <div className="header-btn">
-            <select>
-              <option>Production</option>
-              <option>Staging</option>
-            </select>
-          </div>
-
-          <button className="header-btn" onClick={loadLogs} title="Refresh live logs">
-            <RefreshCw size={12} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          <button className="export-btn" onClick={() => window.print()}>
-            <Download size={13} />
-            <span>Export</span>
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="Logs"
+        subtitle="Searchable live execution logs and query traces from all pipeline runs."
+        onRefresh={loadLogs}
+      />
 
       {loading && !logs.length ? (
         <LoadingSpinner />

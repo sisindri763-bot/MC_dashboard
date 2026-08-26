@@ -261,6 +261,25 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
   color: var(--text-secondary);
 }
 
+.tool-badge {
+  background: var(--bg-card-subtle);
+  color: var(--text-primary);
+  border: 1px solid var(--border);
+  padding: 2px 7px;
+  border-radius: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+
+[data-theme='dark'] .tool-badge,
+.dark .tool-badge {
+  background: #1E293B !important;
+  color: #F1F5F9 !important;
+  border-color: #334155 !important;
+}
+
 .nav-sub {
   margin: 3px 0 3px 18px;
   padding-left: 10px;

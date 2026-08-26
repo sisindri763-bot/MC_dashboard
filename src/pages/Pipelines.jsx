@@ -4,7 +4,7 @@ import {
   GitBranch, CheckCircle, AlertCircle, Clock,
   ArrowUpRight, ArrowDownRight, Search, Play, Eye,
   Server, ChevronLeft, ChevronRight, X, Terminal, AlertTriangle,
-  RotateCcw, Filter, Calendar
+  RotateCcw
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SparkLine from '../components/SparkLine';
@@ -52,6 +52,8 @@ export default function Pipelines() {
   const [pipelineFilter, setPipelineFilter] = useState('All');
   const [toolFilter, setToolFilter] = useState('All');
   const [dateFilter, setDateFilter] = useState('All');
+  const [headerDatePreset, setHeaderDatePreset] = useState('all');
+  const [customDateRange, setCustomDateRange] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
@@ -105,15 +107,51 @@ export default function Pipelines() {
     return Array.from(new Set(runs.map(r => (r.start_time || '').substring(0, 10)).filter(Boolean))).sort().reverse();
   }, [runs]);
 
-  // Real-time instant filtering across all parameters
+  // Handle header date range change
+  const handleHeaderDateChange = (val) => {
+    if (typeof val === 'string') {
+      setHeaderDatePreset(val);
+      setCustomDateRange(null);
+    } else if (val && val.start && val.end) {
+      setHeaderDatePreset('custom');
+      setCustomDateRange(val);
+    }
+    setPage(1);
+  };
+
+  // Real-time instant filtering across all parameters and date ranges
   const filtered = useMemo(() => {
+    // Find reference latest date in runs for relative date window calculations if needed
+    const latestTimestamp = runs.length > 0
+      ? Math.max(...runs.map(r => new Date(r.start_time || 0).getTime()).filter(t => !isNaN(t) && t > 0))
+      : Date.now();
+
+    const now = Date.now();
+    // Anchor relative filters to now or dataset's latest run time
+    const anchorTime = Math.max(now, latestTimestamp);
+
+    let minTime = 0;
+    let maxTime = Infinity;
+
+    if (headerDatePreset === '24h') {
+      minTime = anchorTime - 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '7d') {
+      minTime = anchorTime - 7 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '30d') {
+      minTime = anchorTime - 30 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === 'custom' && customDateRange) {
+      minTime = new Date(customDateRange.start).getTime();
+      maxTime = new Date(customDateRange.end).getTime() + 24 * 60 * 60 * 1000;
+    }
+
     return runs.filter(r => {
       const pName = (r.pipeline_name || '').toLowerCase();
       const runId = String(r.run_id || '').toLowerCase();
       const status = (r.status || '').toLowerCase();
       const tool = (r.tool_name || r.source_tool || 'dbt').toLowerCase();
       const errMsg = (r.error_message || '').toLowerCase();
-      const startTime = r.start_time || '';
+      const startTimeStr = r.start_time || '';
+      const runTime = startTimeStr ? new Date(startTimeStr).getTime() : 0;
 
       const matchSearch = !search ||
         pName.includes(search.toLowerCase()) ||
@@ -124,21 +162,24 @@ export default function Pipelines() {
       const matchStatus = statusFilter === 'All' || status === statusFilter.toLowerCase();
       const matchPipeline = pipelineFilter === 'All' || r.pipeline_name === pipelineFilter;
       const matchTool = toolFilter === 'All' || tool === toolFilter.toLowerCase();
-      const matchDate = dateFilter === 'All' || startTime.startsWith(dateFilter);
+      const matchDropdownDate = dateFilter === 'All' || startTimeStr.startsWith(dateFilter);
 
-      return matchSearch && matchStatus && matchPipeline && matchTool && matchDate;
+      // Check header date range preset
+      const matchHeaderDate = headerDatePreset === 'all' || (runTime >= minTime && runTime <= maxTime);
+
+      return matchSearch && matchStatus && matchPipeline && matchTool && matchDropdownDate && matchHeaderDate;
     });
-  }, [runs, search, statusFilter, pipelineFilter, toolFilter, dateFilter]);
+  }, [runs, search, statusFilter, pipelineFilter, toolFilter, dateFilter, headerDatePreset, customDateRange]);
 
-  // KPI Calculations across all runs
-  const totalRuns = runs.length || 38;
-  const successfulRuns = runs.filter(r => (r.status || '').toLowerCase() === 'success').length;
-  const failedRuns = runs.filter(r => (r.status || '').toLowerCase() === 'failed').length;
-  const successRatePct = totalRuns > 0 ? ((successfulRuns / totalRuns) * 100).toFixed(1) : '76.3';
+  // KPI Calculations across filtered or all runs
+  const totalRuns = filtered.length;
+  const successfulRuns = filtered.filter(r => (r.status || '').toLowerCase() === 'success').length;
+  const failedRuns = filtered.filter(r => (r.status || '').toLowerCase() === 'failed').length;
+  const successRatePct = totalRuns > 0 ? ((successfulRuns / totalRuns) * 100).toFixed(1) : '100.0';
 
-  const avgDurationSec = runs.length > 0
-    ? Math.round(runs.reduce((sum, r) => sum + (Number(r.duration || r.duration_seconds) || 0), 0) / runs.length)
-    : 12;
+  const avgDurationSec = totalRuns > 0
+    ? Math.round(filtered.reduce((sum, r) => sum + (Number(r.duration || r.duration_seconds) || 0), 0) / totalRuns)
+    : 0;
 
   const clearFilters = () => {
     setSearch('');
@@ -146,10 +187,12 @@ export default function Pipelines() {
     setPipelineFilter('All');
     setToolFilter('All');
     setDateFilter('All');
+    setHeaderDatePreset('all');
+    setCustomDateRange(null);
     setPage(1);
   };
 
-  const hasActiveFilters = search || statusFilter !== 'All' || pipelineFilter !== 'All' || toolFilter !== 'All' || dateFilter !== 'All';
+  const hasActiveFilters = search || statusFilter !== 'All' || pipelineFilter !== 'All' || toolFilter !== 'All' || dateFilter !== 'All' || headerDatePreset !== 'all';
 
   // Pagination logic
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
@@ -161,10 +204,11 @@ export default function Pipelines() {
         title="Pipelines"
         subtitle="Complete live execution history, health metrics and run logs across all pipelines."
         onRefresh={loadData}
+        onDateChange={handleHeaderDateChange}
       />
 
       <div className="page-body">
-        {/* Top 5 KPI Cards (Live Real Backend Data) */}
+        {/* Top 5 KPI Cards (Dynamically recalculated based on active filters & date range) */}
         <div className="kpi-grid-5">
           <div className="kpi-card">
             <div className="kpi-card-header">
@@ -210,7 +254,7 @@ export default function Pipelines() {
             <div className="kpi-value">{totalRuns}</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>All recorded historical runs</span>
+              <span>{headerDatePreset === 'all' ? 'All recorded runs' : `Filtered by date range`}</span>
             </div>
             <div className="sparkline-container">
               <SparkLine color="#3B82F6" />
@@ -338,7 +382,7 @@ export default function Pipelines() {
                   <span>Pipeline Execution Runs History</span>
                 </span>
                 <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                  Showing {filtered.length === 0 ? 0 : (page - 1) * perPage + 1}–{Math.min(page * perPage, filtered.length)} of {filtered.length} matching runs ({totalRuns} total)
+                  Showing {filtered.length === 0 ? 0 : (page - 1) * perPage + 1}–{Math.min(page * perPage, filtered.length)} of {filtered.length} matching runs ({runs.length} total)
                 </span>
               </div>
 
@@ -351,7 +395,6 @@ export default function Pipelines() {
                       <th>Status</th>
                       <th>Execution Timestamp</th>
                       <th>Duration</th>
-                      <th>Rows Read</th>
                       <th>Engine / Trigger</th>
                       <th>Error Diagnostic</th>
                       <th style={{ textAlign: 'right' }}>Actions</th>
@@ -360,7 +403,7 @@ export default function Pipelines() {
                   <tbody>
                     {paginated.length === 0 ? (
                       <tr>
-                        <td colSpan={9} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
+                        <td colSpan={8} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
                           No execution records match the active filter criteria.
                         </td>
                       </tr>
@@ -403,12 +446,9 @@ export default function Pipelines() {
                             <td style={{ fontSize: 12, fontWeight: 500 }}>
                               {r.duration ? `${r.duration}s` : `${r.duration_seconds || 12}s`}
                             </td>
-                            <td style={{ fontSize: 12 }}>
-                              {r.rows_read ?? 0}
-                            </td>
                             <td>
-                              <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                                <span style={{ background: '#F1F5F9', padding: '1px 6px', borderRadius: 4, fontSize: 11, fontWeight: 500 }}>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span className="tool-badge">
                                   {r.tool_name || 'dbt'}
                                 </span>
                                 <span style={{ color: 'var(--text-muted)', fontSize: 11 }}>
@@ -416,10 +456,10 @@ export default function Pipelines() {
                                 </span>
                               </div>
                             </td>
-                            <td style={{ maxWidth: 220, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            <td style={{ maxWidth: 260, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                               {r.error_message ? (
                                 <span style={{ color: '#EF4444', fontSize: 11.5, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                                  <AlertTriangle size={13} /> {r.error_message.substring(0, 45)}...
+                                  <AlertTriangle size={13} /> {r.error_message.substring(0, 50)}...
                                 </span>
                               ) : (
                                 <span style={{ color: '#10B981', fontSize: 11.5 }}>

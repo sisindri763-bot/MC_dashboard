@@ -60,31 +60,11 @@ export default function Lineage() {
 
   return (
     <div className="fade-in">
-      <header className="page-header">
-        <div className="page-header-left">
-          <h2>Lineage</h2>
-          <p>Live upstream/downstream dependency graph directly from backend</p>
-        </div>
-
-        <div className="page-header-right">
-          <div className="header-btn">
-            <select>
-              <option>Production</option>
-              <option>Staging</option>
-            </select>
-          </div>
-
-          <button className="header-btn" onClick={loadData} title="Refresh lineage">
-            <RefreshCw size={12} className={loading ? 'spin' : ''} />
-            <span>Refresh</span>
-          </button>
-
-          <button className="export-btn" onClick={() => window.print()}>
-            <Download size={13} />
-            <span>Export</span>
-          </button>
-        </div>
-      </header>
+      <PageHeader
+        title="Lineage"
+        subtitle="Live upstream/downstream dependency graph directly from backend."
+        onRefresh={loadData}
+      />
 
       {loading && !lineageData ? (
         <LoadingSpinner />
