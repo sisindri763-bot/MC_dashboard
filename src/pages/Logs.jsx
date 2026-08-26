@@ -83,12 +83,26 @@ export default function Logs() {
 
   const totalPages = Math.ceil(filtered.length / perPage) || 1;
 
+  const [headerDatePreset, setHeaderDatePreset] = useState('30d');
+  const [customDateRange, setCustomDateRange] = useState(null);
+
+  const handleHeaderDateChange = (val) => {
+    if (typeof val === 'string') {
+      setHeaderDatePreset(val);
+      setCustomDateRange(null);
+    } else if (val && val.start && val.end) {
+      setHeaderDatePreset('custom');
+      setCustomDateRange(val);
+    }
+  };
+
   return (
     <div className="fade-in">
       <PageHeader
         title="Logs"
         subtitle="Searchable live execution logs and query traces from all pipeline runs."
         onRefresh={loadLogs}
+        onDateChange={handleHeaderDateChange}
       />
 
       {loading && !logs.length ? (

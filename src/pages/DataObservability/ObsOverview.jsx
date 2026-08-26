@@ -142,20 +142,28 @@ export default function ObsOverview() {
   ];
 
   // Volume wave chart from real checks
-  const volumeWaveData = volumeData.length > 0
-    ? volumeData.slice(0, 8).map((v, i) => ({
-        time: v.created_at ? new Date(v.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : `Run ${i+1}`,
-        v: v.source_rows ?? 150
-      })).reverse()
-    : [
-        { time: 'Aug 03', v: 120 },
-        { time: 'Aug 06', v: 165 },
-        { time: 'Aug 10', v: 150 },
-        { time: 'Aug 14', v: 180 },
-        { time: 'Aug 17', v: 165 },
-      ];
+  const volumeWaveData = useMemo(() => {
+    if (!volumeData.length) return [];
+    return volumeData.slice(0, 8).map((v, i) => ({
+      time: v.created_at ? new Date(v.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : `Run ${i+1}`,
+      v: v.source_rows ?? 0
+    })).reverse();
+  }, [volumeData]);
 
   const totalVolumeRows = volumeData.reduce((s, v) => s + (v.source_rows ?? 0), 0);
+
+  const [headerDatePreset, setHeaderDatePreset] = useState('30d');
+  const [customDateRange, setCustomDateRange] = useState(null);
+
+  const handleHeaderDateChange = (val) => {
+    if (typeof val === 'string') {
+      setHeaderDatePreset(val);
+      setCustomDateRange(null);
+    } else if (val && val.start && val.end) {
+      setHeaderDatePreset('custom');
+      setCustomDateRange(val);
+    }
+  };
 
   return (
     <div className="fade-in">
@@ -163,6 +171,7 @@ export default function ObsOverview() {
         title="Data Observability"
         subtitle="Monitor the health of your data across all dimensions."
         onRefresh={loadData}
+        onDateChange={handleHeaderDateChange}
       />
 
       <div className="page-body">

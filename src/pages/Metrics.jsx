@@ -114,12 +114,26 @@ export default function Metrics() {
     });
   }, [pipelines, search, selectedPipeline, selectedTool]);
 
+  const [headerDatePreset, setHeaderDatePreset] = useState('30d');
+  const [customDateRange, setCustomDateRange] = useState(null);
+
+  const handleHeaderDateChange = (val) => {
+    if (typeof val === 'string') {
+      setHeaderDatePreset(val);
+      setCustomDateRange(null);
+    } else if (val && val.start && val.end) {
+      setHeaderDatePreset('custom');
+      setCustomDateRange(val);
+    }
+  };
+
   return (
     <div className="fade-in">
       <PageHeader
         title="Metrics"
         subtitle="Real-time live operational metrics and execution trends directly from backend."
         onRefresh={loadData}
+        onDateChange={handleHeaderDateChange}
       />
 
       {loading && !metricsData ? (

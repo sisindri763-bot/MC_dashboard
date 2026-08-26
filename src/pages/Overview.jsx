@@ -233,12 +233,26 @@ export default function Overview() {
     });
   }, [chartsData]);
 
+  const [headerDatePreset, setHeaderDatePreset] = useState('30d');
+  const [customDateRange, setCustomDateRange] = useState(null);
+
+  const handleHeaderDateChange = (val) => {
+    if (typeof val === 'string') {
+      setHeaderDatePreset(val);
+      setCustomDateRange(null);
+    } else if (val && val.start && val.end) {
+      setHeaderDatePreset('custom');
+      setCustomDateRange(val);
+    }
+  };
+
   return (
     <div className="fade-in">
       <PageHeader
         title="Overview"
-        subtitle="Real-time health summary of your data ecosystem"
+        subtitle="Monitor the health and performance of your data pipelines."
         onRefresh={loadData}
+        onDateChange={handleHeaderDateChange}
       />
 
       {loading && !kpiRaw ? (

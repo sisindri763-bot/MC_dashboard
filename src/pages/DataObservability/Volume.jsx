@@ -104,12 +104,26 @@ export default function Volume() {
   const paginated = filtered.slice((page - 1) * perPage, page * perPage);
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
 
+  const [headerDatePreset, setHeaderDatePreset] = useState('30d');
+  const [customDateRange, setCustomDateRange] = useState(null);
+
+  const handleHeaderDateChange = (val) => {
+    if (typeof val === 'string') {
+      setHeaderDatePreset(val);
+      setCustomDateRange(null);
+    } else if (val && val.start && val.end) {
+      setHeaderDatePreset('custom');
+      setCustomDateRange(val);
+    }
+  };
+
   return (
     <div className="fade-in">
       <PageHeader
         title="Volume"
         subtitle="Track the amount of data flowing through your pipelines."
         onRefresh={loadData}
+        onDateChange={handleHeaderDateChange}
       />
 
       <div className="page-body">

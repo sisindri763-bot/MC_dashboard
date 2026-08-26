@@ -212,8 +212,133 @@ export default function Pipelines() {
       />
 
       <div className="page-body">
-        {/* Top 5 KPI Cards (100% Dynamically recalculated based on active filters, pipeline name & date range) */}
-        <div className="kpi-grid-5">
+        {/* 1. TOP FILTERS TOOLBAR (Placed at the very top of the page body) */}
+        <div className="filters-bar">
+          <div className="search-box">
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Search run ID, pipeline name, error..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+            />
+          </div>
+
+          <div className="filter-select">
+            <label>Pipeline</label>
+            <select
+              className="select-control"
+              value={pipelineFilter}
+              onChange={e => { setPipelineFilter(e.target.value); setPage(1); }}
+            >
+              <option value="All">All Pipelines</option>
+              {distinctPipelineNames.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Status</label>
+            <select
+              className="select-control"
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+            >
+              <option value="All">All Statuses</option>
+              <option value="Success">Success</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Execution Date</label>
+            <select
+              className="select-control"
+              value={dateFilter}
+              onChange={e => { setDateFilter(e.target.value); setPage(1); }}
+            >
+              <option value="All">All Dates</option>
+              {distinctDates.map(d => (
+                <option key={d} value={d}>{d}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Engine / Tool</label>
+            <select
+              className="select-control"
+              value={toolFilter}
+              onChange={e => { setToolFilter(e.target.value); setPage(1); }}
+            >
+              <option value="All">All Engines</option>
+              <option value="dbt">dbt</option>
+              <option value="snowflake">Snowflake</option>
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <button className="clear-filters-btn" onClick={clearFilters} title="Reset all filters">
+              <RotateCcw size={12} style={{ display: 'inline', marginRight: 4 }} />
+              Reset Filters
+            </button>
+          )}
+        </div>
+
+        {/* Active Filter Chips Bar */}
+        {hasActiveFilters && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Tag size={12} /> Active Scope:
+            </span>
+
+            {pipelineFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Pipeline: <strong>{pipelineFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setPipelineFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {statusFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Status: <strong>{statusFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setStatusFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {dateFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Date: <strong>{dateFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setDateFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {toolFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Engine: <strong>{toolFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setToolFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {search && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Search: <strong>"{search}"</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setSearch(''); setPage(1); }} />
+              </span>
+            )}
+
+            {headerDatePreset !== 'all' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Range: <strong>{headerDatePreset}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setHeaderDatePreset('all'); setCustomDateRange(null); setPage(1); }} />
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 2. DYNAMIC KPI METRICS CARDS (Directly below the top filter bar, 100% reactive to filter selection) */}
+        <div className="kpi-grid-5 mt-4">
           {/* Card 1: Pipeline / Scope */}
           <div className="kpi-card">
             <div className="kpi-card-header">
@@ -317,132 +442,7 @@ export default function Pipelines() {
           </div>
         </div>
 
-        {/* Real-time Multi-Filter Toolbar */}
-        <div className="filters-bar mt-4">
-          <div className="search-box">
-            <Search size={14} />
-            <input
-              type="text"
-              placeholder="Search run ID, pipeline name, error..."
-              value={search}
-              onChange={e => { setSearch(e.target.value); setPage(1); }}
-            />
-          </div>
-
-          <div className="filter-select">
-            <label>Pipeline</label>
-            <select
-              className="select-control"
-              value={pipelineFilter}
-              onChange={e => { setPipelineFilter(e.target.value); setPage(1); }}
-            >
-              <option value="All">All Pipelines</option>
-              {distinctPipelineNames.map(name => (
-                <option key={name} value={name}>{name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="filter-select">
-            <label>Status</label>
-            <select
-              className="select-control"
-              value={statusFilter}
-              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
-            >
-              <option value="All">All Statuses</option>
-              <option value="Success">Success</option>
-              <option value="Failed">Failed</option>
-            </select>
-          </div>
-
-          <div className="filter-select">
-            <label>Execution Date</label>
-            <select
-              className="select-control"
-              value={dateFilter}
-              onChange={e => { setDateFilter(e.target.value); setPage(1); }}
-            >
-              <option value="All">All Dates</option>
-              {distinctDates.map(d => (
-                <option key={d} value={d}>{d}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="filter-select">
-            <label>Engine / Tool</label>
-            <select
-              className="select-control"
-              value={toolFilter}
-              onChange={e => { setToolFilter(e.target.value); setPage(1); }}
-            >
-              <option value="All">All Engines</option>
-              <option value="dbt">dbt</option>
-              <option value="snowflake">Snowflake</option>
-            </select>
-          </div>
-
-          {hasActiveFilters && (
-            <button className="clear-filters-btn" onClick={clearFilters} title="Reset all filters">
-              <RotateCcw size={12} style={{ display: 'inline', marginRight: 4 }} />
-              Reset Filters
-            </button>
-          )}
-        </div>
-
-        {/* Active Filter Chips Bar */}
-        {hasActiveFilters && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
-            <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-              <Tag size={12} /> Active Filters:
-            </span>
-
-            {pipelineFilter !== 'All' && (
-              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
-                Pipeline: <strong>{pipelineFilter}</strong>
-                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setPipelineFilter('All'); setPage(1); }} />
-              </span>
-            )}
-
-            {statusFilter !== 'All' && (
-              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
-                Status: <strong>{statusFilter}</strong>
-                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setStatusFilter('All'); setPage(1); }} />
-              </span>
-            )}
-
-            {dateFilter !== 'All' && (
-              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
-                Date: <strong>{dateFilter}</strong>
-                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setDateFilter('All'); setPage(1); }} />
-              </span>
-            )}
-
-            {toolFilter !== 'All' && (
-              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
-                Engine: <strong>{toolFilter}</strong>
-                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setToolFilter('All'); setPage(1); }} />
-              </span>
-            )}
-
-            {search && (
-              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
-                Search: <strong>"{search}"</strong>
-                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setSearch(''); setPage(1); }} />
-              </span>
-            )}
-
-            {headerDatePreset !== 'all' && (
-              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
-                Range: <strong>{headerDatePreset}</strong>
-                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setHeaderDatePreset('all'); setCustomDateRange(null); setPage(1); }} />
-              </span>
-            )}
-          </div>
-        )}
-
-        {/* Unified Complete Pipelines History Table */}
+        {/* 3. UNIFIED TABLE (Directly below the KPI cards) */}
         <div className="card mt-4">
           {loading && !runs.length ? (
             <LoadingSpinner />
