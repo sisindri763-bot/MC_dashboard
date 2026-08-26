@@ -4,7 +4,7 @@ import {
   GitBranch, CheckCircle, AlertCircle, Clock,
   ArrowUpRight, ArrowDownRight, Search, Play, Eye,
   Server, ChevronLeft, ChevronRight, X, Terminal, AlertTriangle,
-  RotateCcw
+  RotateCcw, Tag
 } from 'lucide-react';
 import PageHeader from '../components/PageHeader';
 import SparkLine from '../components/SparkLine';
@@ -85,15 +85,6 @@ export default function Pipelines() {
     loadData();
   }, []);
 
-  // Distinct unique pipeline models count
-  const uniquePipelinesCount = useMemo(() => {
-    const names = new Set([
-      ...pipelinesList.map(p => p.pipeline_name || p.name),
-      ...runs.map(r => r.pipeline_name)
-    ].filter(Boolean));
-    return names.size || 3;
-  }, [pipelinesList, runs]);
-
   // Distinct pipeline names for filter dropdown
   const distinctPipelineNames = useMemo(() => {
     return Array.from(new Set([
@@ -121,13 +112,11 @@ export default function Pipelines() {
 
   // Real-time instant filtering across all parameters and date ranges
   const filtered = useMemo(() => {
-    // Find reference latest date in runs for relative date window calculations if needed
     const latestTimestamp = runs.length > 0
       ? Math.max(...runs.map(r => new Date(r.start_time || 0).getTime()).filter(t => !isNaN(t) && t > 0))
       : Date.now();
 
     const now = Date.now();
-    // Anchor relative filters to now or dataset's latest run time
     const anchorTime = Math.max(now, latestTimestamp);
 
     let minTime = 0;
@@ -163,23 +152,38 @@ export default function Pipelines() {
       const matchPipeline = pipelineFilter === 'All' || r.pipeline_name === pipelineFilter;
       const matchTool = toolFilter === 'All' || tool === toolFilter.toLowerCase();
       const matchDropdownDate = dateFilter === 'All' || startTimeStr.startsWith(dateFilter);
-
-      // Check header date range preset
       const matchHeaderDate = headerDatePreset === 'all' || (runTime >= minTime && runTime <= maxTime);
 
       return matchSearch && matchStatus && matchPipeline && matchTool && matchDropdownDate && matchHeaderDate;
     });
   }, [runs, search, statusFilter, pipelineFilter, toolFilter, dateFilter, headerDatePreset, customDateRange]);
 
-  // KPI Calculations across filtered or all runs
+  // Distinct unique pipeline models matching active filter
+  const filteredUniquePipelinesCount = useMemo(() => {
+    const names = new Set(filtered.map(r => r.pipeline_name).filter(Boolean));
+    return names.size;
+  }, [filtered]);
+
+  // Total unique pipeline count in system
+  const totalUniquePipelinesInSystem = useMemo(() => {
+    const names = new Set(runs.map(r => r.pipeline_name).filter(Boolean));
+    return names.size || 3;
+  }, [runs]);
+
+  // KPI Calculations strictly derived from filtered dataset
   const totalRuns = filtered.length;
   const successfulRuns = filtered.filter(r => (r.status || '').toLowerCase() === 'success').length;
   const failedRuns = filtered.filter(r => (r.status || '').toLowerCase() === 'failed').length;
-  const successRatePct = totalRuns > 0 ? ((successfulRuns / totalRuns) * 100).toFixed(1) : '100.0';
+  const successRatePct = totalRuns > 0 ? ((successfulRuns / totalRuns) * 100).toFixed(1) : '0.0';
 
   const avgDurationSec = totalRuns > 0
     ? Math.round(filtered.reduce((sum, r) => sum + (Number(r.duration || r.duration_seconds) || 0), 0) / totalRuns)
     : 0;
+
+  // Sparkline data arrays for filtered subset
+  const sparkSuccess = useMemo(() => filtered.map(r => ((r.status || '').toLowerCase() === 'success' ? 100 : 0)), [filtered]);
+  const sparkFailed = useMemo(() => filtered.map(r => ((r.status || '').toLowerCase() === 'failed' ? 100 : 0)), [filtered]);
+  const sparkDuration = useMemo(() => filtered.map(r => Number(r.duration || r.duration_seconds) || 0), [filtered]);
 
   const clearFilters = () => {
     setSearch('');
@@ -208,25 +212,35 @@ export default function Pipelines() {
       />
 
       <div className="page-body">
-        {/* Top 5 KPI Cards (Dynamically recalculated based on active filters & date range) */}
+        {/* Top 5 KPI Cards (100% Dynamically recalculated based on active filters, pipeline name & date range) */}
         <div className="kpi-grid-5">
+          {/* Card 1: Pipeline / Scope */}
           <div className="kpi-card">
             <div className="kpi-card-header">
               <div className="kpi-icon" style={{ background: '#EEF2FF', color: '#6366F1' }}>
                 <GitBranch size={18} />
               </div>
-              <span className="kpi-label">Unique Pipelines</span>
+              <span className="kpi-label">
+                {pipelineFilter !== 'All' ? 'Selected Pipeline' : 'Unique Pipelines'}
+              </span>
             </div>
-            <div className="kpi-value">{uniquePipelinesCount}</div>
+            <div className="kpi-value" style={{ fontSize: pipelineFilter !== 'All' ? 18 : 24, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {pipelineFilter !== 'All' ? pipelineFilter : filteredUniquePipelinesCount}
+            </div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>{uniquePipelinesCount} unique models registered</span>
+              <span>
+                {pipelineFilter !== 'All'
+                  ? `1 specific pipeline in focus`
+                  : (hasActiveFilters ? `${filteredUniquePipelinesCount} of ${totalUniquePipelinesInSystem} pipelines` : `${totalUniquePipelinesInSystem} unique models`)}
+              </span>
             </div>
             <div className="sparkline-container">
-              <SparkLine color="#6366F1" />
+              <SparkLine color="#6366F1" data={sparkDuration} />
             </div>
           </div>
 
+          {/* Card 2: Success Rate */}
           <div className="kpi-card">
             <div className="kpi-card-header">
               <div className="kpi-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
@@ -240,10 +254,11 @@ export default function Pipelines() {
               <span>{successfulRuns}/{totalRuns} runs passed</span>
             </div>
             <div className="sparkline-container">
-              <SparkLine color="#10B981" />
+              <SparkLine color="#10B981" data={sparkSuccess} />
             </div>
           </div>
 
+          {/* Card 3: Total Execution Runs */}
           <div className="kpi-card">
             <div className="kpi-card-header">
               <div className="kpi-icon" style={{ background: '#EFF6FF', color: '#3B82F6' }}>
@@ -254,13 +269,18 @@ export default function Pipelines() {
             <div className="kpi-value">{totalRuns}</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>{headerDatePreset === 'all' ? 'All recorded runs' : `Filtered by date range`}</span>
+              <span>
+                {pipelineFilter !== 'All'
+                  ? `${totalRuns} runs for ${pipelineFilter}`
+                  : (hasActiveFilters ? `${totalRuns} matching active filter` : `${runs.length} all recorded runs`)}
+              </span>
             </div>
             <div className="sparkline-container">
-              <SparkLine color="#3B82F6" />
+              <SparkLine color="#3B82F6" data={sparkDuration} />
             </div>
           </div>
 
+          {/* Card 4: Failed Runs */}
           <div className="kpi-card">
             <div className="kpi-card-header">
               <div className="kpi-icon" style={{ background: '#FEF2F2', color: '#EF4444' }}>
@@ -269,15 +289,16 @@ export default function Pipelines() {
               <span className="kpi-label">Failed Runs</span>
             </div>
             <div className="kpi-value">{failedRuns}</div>
-            <div className="kpi-delta down">
-              <ArrowDownRight size={13} />
+            <div className={`kpi-delta ${failedRuns > 0 ? 'down' : 'up'}`}>
+              {failedRuns > 0 ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
               <span>{failedRuns > 0 ? `${failedRuns} execution failures` : '0 failures'}</span>
             </div>
             <div className="sparkline-container">
-              <SparkLine color={failedRuns > 0 ? '#EF4444' : '#10B981'} />
+              <SparkLine color={failedRuns > 0 ? '#EF4444' : '#10B981'} data={sparkFailed} />
             </div>
           </div>
 
+          {/* Card 5: Avg Duration */}
           <div className="kpi-card">
             <div className="kpi-card-header">
               <div className="kpi-icon" style={{ background: '#FFFBEB', color: '#F59E0B' }}>
@@ -288,10 +309,10 @@ export default function Pipelines() {
             <div className="kpi-value">{fmtDuration(avgDurationSec)}</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>Average execution runtime</span>
+              <span>{totalRuns > 0 ? `${avgDurationSec}s average runtime` : 'No runs in scope'}</span>
             </div>
             <div className="sparkline-container">
-              <SparkLine color="#F59E0B" />
+              <SparkLine color="#F59E0B" data={sparkDuration} />
             </div>
           </div>
         </div>
@@ -369,6 +390,57 @@ export default function Pipelines() {
             </button>
           )}
         </div>
+
+        {/* Active Filter Chips Bar */}
+        {hasActiveFilters && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Tag size={12} /> Active Filters:
+            </span>
+
+            {pipelineFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Pipeline: <strong>{pipelineFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setPipelineFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {statusFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Status: <strong>{statusFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setStatusFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {dateFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Date: <strong>{dateFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setDateFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {toolFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Engine: <strong>{toolFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setToolFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {search && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Search: <strong>"{search}"</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setSearch(''); setPage(1); }} />
+              </span>
+            )}
+
+            {headerDatePreset !== 'all' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Range: <strong>{headerDatePreset}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setHeaderDatePreset('all'); setCustomDateRange(null); setPage(1); }} />
+              </span>
+            )}
+          </div>
+        )}
 
         {/* Unified Complete Pipelines History Table */}
         <div className="card mt-4">
