@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
-  CheckCircle, Clock, AlertTriangle, Search, Filter,
-  MoreVertical, Database, Info
+  CheckCircle, Clock, AlertTriangle, Search,
+  Database, Info, RotateCcw, Tag, X, ArrowUpRight, ArrowDownRight
 } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import LoadingSpinner from '../../components/LoadingSpinner';
@@ -25,16 +25,14 @@ function fmtLag(mins) {
 
 export default function Freshness() {
   const [data, setData] = useState([]);
-  const [summary, setSummary] = useState({
-    total_assets: 0,
-    fresh_count: 0,
-    delayed_count: 0,
-    stale_count: 0,
-    compliance_rate: '0.0%'
-  });
   const [loading, setLoading] = useState(true);
+
+  // Top Filters
   const [search, setSearch] = useState('');
+  const [pipelineFilter, setPipelineFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
+  const [headerDatePreset, setHeaderDatePreset] = useState('all');
+  const [customDateRange, setCustomDateRange] = useState(null);
   const [page, setPage] = useState(1);
   const [perPage, setPerPage] = useState(10);
 
@@ -45,20 +43,6 @@ export default function Freshness() {
       if (res) {
         const list = res.items || res.freshness_checks || (Array.isArray(res) ? res : res.datasets || []);
         setData(list);
-        if (res.summary) {
-          setSummary(res.summary);
-        } else {
-          const fresh = list.filter(d => (d.status ?? d.freshness_status ?? '').toLowerCase() === 'fresh').length;
-          const delayed = list.filter(d => (d.status ?? d.freshness_status ?? '').toLowerCase() === 'delayed').length;
-          const stale = list.length - fresh - delayed;
-          setSummary({
-            total_assets: list.length,
-            fresh_count: fresh,
-            delayed_count: delayed,
-            stale_count: stale,
-            compliance_rate: list.length > 0 ? `${(fresh / list.length * 100).toFixed(1)}%` : '0.0%'
-          });
-        }
       }
     } catch (e) {
       console.error('Failed to load freshness data:', e);
@@ -71,32 +55,10 @@ export default function Freshness() {
     loadData();
   }, []);
 
-  const filtered = useMemo(() => {
-    return data.filter(d => {
-      const name = d.dataset_id ?? d.pipeline_name ?? d.object_name ?? '';
-      const status = d.status ?? d.freshness_status ?? 'Stale';
-      const matchSearch = name.toLowerCase().includes(search.toLowerCase());
-      const matchStatus = statusFilter === 'All' || status.toLowerCase() === statusFilter.toLowerCase();
-      return matchSearch && matchStatus;
-    });
-  }, [data, search, statusFilter]);
-
-  const total = summary.total_assets || data.length;
-  const fresh = summary.fresh_count;
-  const delayed = summary.delayed_count;
-  const stale = summary.stale_count;
-
-  const freshPct = total > 0 ? Math.round(fresh / total * 100) : 0;
-  const delayedPct = total > 0 ? Math.round(delayed / total * 100) : 0;
-  const stalePct = total > 0 ? Math.round(stale / total * 100) : (total > 0 ? 100 : 0);
-
-  const avgLagMins = data.length > 0 ? data.reduce((s, d) => s + (d.lag_minutes ?? 0), 0) / data.length : 0;
-
-  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
-  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
-
-  const [headerDatePreset, setHeaderDatePreset] = useState('30d');
-  const [customDateRange, setCustomDateRange] = useState(null);
+  // Distinct pipelines
+  const distinctPipelines = useMemo(() => {
+    return Array.from(new Set(data.map(d => d.pipeline_name || d.dataset_id).filter(Boolean)));
+  }, [data]);
 
   const handleHeaderDateChange = (val) => {
     if (typeof val === 'string') {
@@ -106,7 +68,72 @@ export default function Freshness() {
       setHeaderDatePreset('custom');
       setCustomDateRange(val);
     }
+    setPage(1);
   };
+
+  // Real-time filtering
+  const filtered = useMemo(() => {
+    const latestTimestamp = data.length > 0
+      ? Math.max(...data.map(d => new Date(d.last_updated || d.last_run_time || 0).getTime()).filter(t => !isNaN(t) && t > 0))
+      : Date.now();
+
+    const now = Date.now();
+    const anchorTime = Math.max(now, latestTimestamp);
+
+    let minTime = 0;
+    let maxTime = Infinity;
+
+    if (headerDatePreset === '24h') {
+      minTime = anchorTime - 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '7d') {
+      minTime = anchorTime - 7 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '30d') {
+      minTime = anchorTime - 30 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === 'custom' && customDateRange) {
+      minTime = new Date(customDateRange.start).getTime();
+      maxTime = new Date(customDateRange.end).getTime() + 24 * 60 * 60 * 1000;
+    }
+
+    return data.filter(d => {
+      const name = (d.dataset_id || d.pipeline_name || d.object_name || '').toLowerCase();
+      const pName = d.pipeline_name || d.dataset_id || '';
+      const status = (d.status || d.freshness_status || 'Stale').toLowerCase();
+      const updatedTime = d.last_updated || d.last_run_time ? new Date(d.last_updated || d.last_run_time).getTime() : 0;
+
+      const matchSearch = !search || name.includes(search.toLowerCase());
+      const matchPipeline = pipelineFilter === 'All' || pName === pipelineFilter;
+      const matchStatus = statusFilter === 'All' || status === statusFilter.toLowerCase();
+      const matchHeaderDate = headerDatePreset === 'all' || !updatedTime || (updatedTime >= minTime && updatedTime <= maxTime);
+
+      return matchSearch && matchPipeline && matchStatus && matchHeaderDate;
+    });
+  }, [data, search, pipelineFilter, statusFilter, headerDatePreset, customDateRange]);
+
+  // Recalculate KPIs based on filtered dataset
+  const total = filtered.length;
+  const fresh = filtered.filter(d => (d.status || d.freshness_status || '').toLowerCase() === 'fresh').length;
+  const delayed = filtered.filter(d => (d.status || d.freshness_status || '').toLowerCase() === 'delayed').length;
+  const stale = total - fresh - delayed;
+
+  const freshPct = total > 0 ? Math.round((fresh / total) * 100) : 0;
+  const delayedPct = total > 0 ? Math.round((delayed / total) * 100) : 0;
+  const stalePct = total > 0 ? Math.round((stale / total) * 100) : 0;
+
+  const avgLagMins = total > 0 ? Math.round(filtered.reduce((s, d) => s + (d.lag_minutes ?? 0), 0) / total) : 0;
+
+  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
+  const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+
+  const clearFilters = () => {
+    setSearch('');
+    setPipelineFilter('All');
+    setStatusFilter('All');
+    setHeaderDatePreset('all');
+    setCustomDateRange(null);
+    setPage(1);
+  };
+
+  const hasActiveFilters = search || pipelineFilter !== 'All' || statusFilter !== 'All' || headerDatePreset !== 'all';
 
   return (
     <div className="fade-in">
@@ -118,8 +145,93 @@ export default function Freshness() {
       />
 
       <div className="page-body">
-        {/* Top 4 KPI Cards (Live Real Backend Data) */}
-        <div className="kpi-grid-4">
+        {/* 1. TOP FILTERS TOOLBAR (Placed at the very top of the page body) */}
+        <div className="filters-bar">
+          <div className="search-box">
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Search datasets, pipelines..."
+              value={search}
+              onChange={e => { setSearch(e.target.value); setPage(1); }}
+            />
+          </div>
+
+          <div className="filter-select">
+            <label>Pipeline</label>
+            <select
+              className="select-control"
+              value={pipelineFilter}
+              onChange={e => { setPipelineFilter(e.target.value); setPage(1); }}
+            >
+              <option value="All">All Pipelines</option>
+              {distinctPipelines.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Status</label>
+            <select
+              className="select-control"
+              value={statusFilter}
+              onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+            >
+              <option value="All">All Statuses</option>
+              <option value="Fresh">Fresh</option>
+              <option value="Delayed">Delayed</option>
+              <option value="Stale">Stale</option>
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <button className="clear-filters-btn" onClick={clearFilters} title="Reset all filters">
+              <RotateCcw size={12} style={{ display: 'inline', marginRight: 4 }} />
+              Reset Filters
+            </button>
+          )}
+        </div>
+
+        {/* Active Filter Chips Bar */}
+        {hasActiveFilters && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Tag size={12} /> Active Scope:
+            </span>
+
+            {pipelineFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Pipeline: <strong>{pipelineFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setPipelineFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {statusFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Status: <strong>{statusFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setStatusFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {search && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Search: <strong>"{search}"</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setSearch(''); setPage(1); }} />
+              </span>
+            )}
+
+            {headerDatePreset !== 'all' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Range: <strong>{headerDatePreset}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setHeaderDatePreset('all'); setCustomDateRange(null); setPage(1); }} />
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 2. DYNAMIC TOP 4 KPI CARDS (Placed directly below filters, 100% reactive) */}
+        <div className="kpi-grid-4 mt-4">
           <div className="kpi-card">
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -131,7 +243,7 @@ export default function Freshness() {
               <span style={{ fontSize: 13, fontWeight: 700, color: '#10B981' }}>{freshPct}%</span>
             </div>
             <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{fresh}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Within SLA</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Within SLA threshold</div>
             <div className="progress-track" style={{ marginTop: 10, height: 4 }}>
               <div className="progress-fill green" style={{ width: `${freshPct}%` }} />
             </div>
@@ -148,7 +260,7 @@ export default function Freshness() {
               <span style={{ fontSize: 13, fontWeight: 700, color: '#F59E0B' }}>{delayedPct}%</span>
             </div>
             <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{delayed}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Outside SLA</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Approaching SLA limit</div>
             <div className="progress-track" style={{ marginTop: 10, height: 4 }}>
               <div className="progress-fill orange" style={{ width: `${delayedPct}%` }} />
             </div>
@@ -165,163 +277,149 @@ export default function Freshness() {
               <span style={{ fontSize: 13, fontWeight: 700, color: '#EF4444' }}>{stalePct}%</span>
             </div>
             <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{stale}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>No recent updates</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Outside SLA threshold</div>
             <div className="progress-track" style={{ marginTop: 10, height: 4 }}>
               <div className="progress-fill red" style={{ width: `${stalePct}%` }} />
             </div>
           </div>
 
           <div className="kpi-card">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-              <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#EEF2FF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#6366F1' }}>
-                <Clock size={15} />
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <div style={{ width: 28, height: 28, borderRadius: '50%', background: '#EFF6FF', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3B82F6' }}>
+                  <Clock size={15} />
+                </div>
+                <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Avg Lag</span>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>Average Lag</span>
             </div>
             <div style={{ fontSize: 28, fontWeight: 800, color: 'var(--text-primary)', marginTop: 8 }}>{fmtLag(avgLagMins)}</div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Across all {total} monitored datasets</div>
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 2 }}>Across {total} matching assets</div>
+            <div className="progress-track" style={{ marginTop: 10, height: 4 }}>
+              <div className="progress-fill blue" style={{ width: `${Math.min(100, (freshPct + delayedPct))}%` }} />
+            </div>
           </div>
         </div>
 
-        {/* Pipelines Table Card */}
+        {/* 3. TABLE OF DATASETS */}
         <div className="card mt-4">
-          <div className="card-header">
-            <span className="card-title">Monitored Datasets ({filtered.length})</span>
-            <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <div className="search-box">
-                <Search size={13} />
-                <input
-                  type="text"
-                  placeholder="Search dataset or pipeline..."
-                  value={search}
-                  onChange={e => { setSearch(e.target.value); setPage(1); }}
-                  style={{ width: 220, height: 30 }}
-                />
-              </div>
-              <select className="select-control" value={statusFilter} onChange={e => { setStatusFilter(e.target.value); setPage(1); }}>
-                <option value="All">All Status</option>
-                <option value="Fresh">Fresh</option>
-                <option value="Delayed">Delayed</option>
-                <option value="Stale">Stale</option>
-              </select>
-            </div>
-          </div>
-
-          {loading ? (
+          {loading && !data.length ? (
             <LoadingSpinner />
           ) : (
-            <div className="table-wrapper">
-              <table className="vithi-table">
-                <thead>
-                  <tr>
-                    <th>Dataset / Pipeline</th>
-                    <th>System</th>
-                    <th>Last Updated</th>
-                    <th>SLA Target</th>
-                    <th>Current Lag</th>
-                    <th>Status</th>
-                    <th>Owner</th>
-                    <th style={{ textAlign: 'right' }}></th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {paginated.length === 0 ? (
+            <>
+              <div className="card-header" style={{ marginBottom: 14 }}>
+                <div className="card-title" style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <Database size={16} color="#10B981" />
+                  <span>Monitored Datasets Freshness</span>
+                </div>
+                <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Showing {filtered.length === 0 ? 0 : (page - 1) * perPage + 1}–{Math.min(page * perPage, filtered.length)} of {filtered.length} matching datasets
+                </span>
+              </div>
+
+              <div className="table-wrapper">
+                <table className="vithi-table">
+                  <thead>
                     <tr>
-                      <td colSpan={8} style={{ textAlign: 'center', padding: '36px', color: 'var(--text-secondary)' }}>
-                        No freshness datasets found.
-                      </td>
+                      <th>Dataset / Model</th>
+                      <th>Pipeline</th>
+                      <th>Status</th>
+                      <th>Last Updated</th>
+                      <th>Freshness Lag</th>
+                      <th>SLA Target</th>
+                      <th>Engine</th>
                     </tr>
-                  ) : (
-                    paginated.map((d, i) => {
-                      const name = d.dataset_id ?? d.pipeline_name ?? d.object_name ?? 'dataset';
-                      const status = (d.status ?? d.freshness_status ?? 'Stale').toLowerCase();
-                      const sla = d.sla_minutes ?? 60;
-                      const lag = d.lag_minutes ?? 0;
-                      const lagColor = lag <= sla ? '#10B981' : lag <= sla * 2 ? '#F59E0B' : '#EF4444';
-
-                      return (
-                        <tr key={d.asset_id ?? i}>
-                          <td>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                              <Database size={15} color="#3B82F6" />
-                              <div>
-                                <div style={{ fontWeight: 600, color: 'var(--text-primary)', fontSize: 12.5 }}>
-                                  {name}
+                  </thead>
+                  <tbody>
+                    {paginated.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} style={{ textAlign: 'center', padding: 36, color: 'var(--text-muted)' }}>
+                          No datasets match the active filter criteria.
+                        </td>
+                      </tr>
+                    ) : (
+                      paginated.map((item, idx) => {
+                        const status = (item.status || item.freshness_status || 'Stale').toLowerCase();
+                        return (
+                          <tr key={item.id || item.dataset_id || idx}>
+                            <td>
+                              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                                <div style={{
+                                  width: 24, height: 24, borderRadius: 6,
+                                  background: 'var(--bg-card-subtle)',
+                                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                                  color: status === 'fresh' ? '#10B981' : status === 'delayed' ? '#F59E0B' : '#EF4444',
+                                  border: '1px solid var(--border)'
+                                }}>
+                                  <Database size={12} />
                                 </div>
-                                {d.pipeline_name && d.pipeline_name !== name && (
-                                  <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                                    Pipeline: {d.pipeline_name}
-                                  </div>
-                                )}
+                                <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>
+                                  {item.dataset_id || item.object_name || 'dataset'}
+                                </span>
                               </div>
-                            </div>
-                          </td>
-                          <td style={{ color: 'var(--text-secondary)' }}>{d.system_name ?? 'Snowflake'}</td>
-                          <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{fmtTime(d.last_updated_at ?? d.observed_at)}</td>
-                          <td style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{sla} min</td>
-                          <td style={{ fontSize: 12.5, fontWeight: 600, color: lagColor }}>{fmtLag(lag)}</td>
-                          <td>
-                            <span className={`status-pill ${status}`}>
-                              {status.charAt(0).toUpperCase() + status.slice(1)}
-                            </span>
-                          </td>
-                          <td>
-                            <div className="owner-chip">
-                              <div className="owner-circle de">DE</div>
-                              <span>{d.owner ?? 'Data Eng'}</span>
-                            </div>
-                          </td>
-                          <td style={{ textAlign: 'right' }}>
-                            <button className="icon-btn" style={{ width: 28, height: 28 }}>
-                              <MoreVertical size={13} />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })
-                  )}
-                </tbody>
-              </table>
-            </div>
+                            </td>
+                            <td>
+                              <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                                {item.pipeline_name || 'ecommerce_etl'}
+                              </span>
+                            </td>
+                            <td>
+                              <span className={`status-pill ${status}`}>
+                                {item.status || item.freshness_status || 'Stale'}
+                              </span>
+                            </td>
+                            <td style={{ fontSize: 12 }}>{fmtTime(item.last_updated || item.last_run_time)}</td>
+                            <td style={{ fontSize: 12, fontWeight: 600, color: status === 'fresh' ? '#10B981' : status === 'delayed' ? '#F59E0B' : '#EF4444' }}>
+                              {fmtLag(item.lag_minutes)}
+                            </td>
+                            <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                              {item.sla_target || '< 24 hours'}
+                            </td>
+                            <td>
+                              <span className="tool-badge">
+                                {item.engine || item.tool_name || 'snowflake'}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Pagination */}
+              <div className="pagination-bar">
+                <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
+                  Showing {filtered.length === 0 ? 0 : (page - 1) * perPage + 1} to {Math.min(page * perPage, filtered.length)} of {filtered.length} datasets
+                </div>
+
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                  <select
+                    className="select-control"
+                    value={perPage}
+                    onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}
+                    style={{ fontSize: 11.5, padding: '3px 8px' }}
+                  >
+                    <option value={10}>10 / page</option>
+                    <option value={20}>20 / page</option>
+                    <option value={50}>50 / page</option>
+                  </select>
+
+                  <div className="pagination-pages">
+                    {Array.from({ length: totalPages }, (_, i) => i + 1).map(pNum => (
+                      <button
+                        key={pNum}
+                        className={`pagination-btn ${pNum === page ? 'active' : ''}`}
+                        onClick={() => setPage(pNum)}
+                      >
+                        {pNum}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </>
           )}
-
-          {/* Pagination */}
-          <div className="pagination-bar">
-            <span>Showing {Math.min((page - 1) * perPage + 1, filtered.length)} to {Math.min(page * perPage, filtered.length)} of {filtered.length} datasets</span>
-            <div className="pagination-pages">
-              <button className="pagination-btn" disabled={page === 1} onClick={() => setPage(p => p - 1)}>‹</button>
-              {Array.from({ length: Math.min(totalPages, 6) }, (_, i) => i + 1).map(p => (
-                <button
-                  key={p}
-                  className={`pagination-btn ${page === p ? 'active' : ''}`}
-                  onClick={() => setPage(p)}
-                >
-                  {p}
-                </button>
-              ))}
-              {totalPages > 6 && <span>...</span>}
-              {totalPages > 6 && (
-                <button
-                  className={`pagination-btn ${page === totalPages ? 'active' : ''}`}
-                  onClick={() => setPage(totalPages)}
-                >
-                  {totalPages}
-                </button>
-              )}
-              <button className="pagination-btn" disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>›</button>
-              <select className="select-control" style={{ marginLeft: 8, padding: '4px 8px' }} value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1); }}>
-                <option value={10}>10 / page</option>
-                <option value={25}>25 / page</option>
-                <option value={50}>50 / page</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Bottom Info Banner */}
-          <div className="info-notice">
-            <Info size={14} style={{ flexShrink: 0 }} />
-            <span>Freshness SLA calculation uses the duration elapsed since last verified ingestion commit on live AWS RDS / Snowflake clusters.</span>
-          </div>
         </div>
       </div>
     </div>

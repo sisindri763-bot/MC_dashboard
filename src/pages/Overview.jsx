@@ -2,7 +2,8 @@ import { useEffect, useState, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   GitBranch, CheckCircle, XCircle, Clock, AlertTriangle,
-  ArrowUpRight, ArrowDownRight
+  ArrowUpRight, ArrowDownRight, Search, Play, Server,
+  RotateCcw, Tag, X, ChevronRight
 } from 'lucide-react';
 import {
   BarChart, Bar, AreaChart, Area,
@@ -16,8 +17,8 @@ import {
   fetchOverviewCharts,
   fetchOverviewHealth,
   fetchRecentIncidents,
-  fetchPipelineMonitoring,
   fetchPipelines,
+  fetchLogs
 } from '../api/client';
 
 const TOOLTIP_STYLE = {
@@ -38,31 +39,28 @@ export default function Overview() {
   const [loading, setLoading] = useState(true);
 
   // Live state
-  const [kpiRaw, setKpiRaw] = useState(null);
-  const [chartsData, setChartsData] = useState(null);
+  const [runs, setRuns] = useState([]);
+  const [pipelinesList, setPipelinesList] = useState([]);
   const [healthData, setHealthData] = useState([]);
   const [incidentsList, setIncidentsList] = useState([]);
-  const [pipelinesList, setPipelinesList] = useState([]);
+
+  // Top Filters
+  const [search, setSearch] = useState('');
+  const [pipelineFilter, setPipelineFilter] = useState('All');
+  const [statusFilter, setStatusFilter] = useState('All');
+  const [toolFilter, setToolFilter] = useState('All');
+  const [headerDatePreset, setHeaderDatePreset] = useState('all');
+  const [customDateRange, setCustomDateRange] = useState(null);
 
   const loadData = async () => {
     setLoading(true);
     try {
-      const [kRes, cRes, hRes, incRes, pRes, allPipes] = await Promise.allSettled([
-        fetchOverviewKPIs(),
-        fetchOverviewCharts(),
+      const [hRes, incRes, pRes, lRes] = await Promise.allSettled([
         fetchOverviewHealth(),
         fetchRecentIncidents(),
-        fetchPipelineMonitoring(),
         fetchPipelines(),
+        fetchLogs({ limit: 100 })
       ]);
-
-      if (kRes.status === 'fulfilled' && kRes.value) {
-        setKpiRaw(kRes.value);
-      }
-
-      if (cRes.status === 'fulfilled' && cRes.value) {
-        setChartsData(cRes.value);
-      }
 
       if (hRes.status === 'fulfilled' && hRes.value) {
         const pillars = hRes.value.pillars || hRes.value.items || hRes.value.health || [];
@@ -77,27 +75,25 @@ export default function Overview() {
 
       if (incRes.status === 'fulfilled' && incRes.value) {
         const incs = incRes.value.incidents || incRes.value.items || [];
-        setIncidentsList(incs.slice(0, 5).map(inc => ({
+        setIncidentsList(incs.map(inc => ({
           title: inc.title ?? inc.pipeline_name ?? 'Pipeline execution issue',
           desc: inc.description ?? inc.error_message ?? 'Execution error detected',
+          pipeline_name: inc.pipeline_name || '',
           severity: inc.severity ?? 'Critical',
           state: inc.state ?? inc.status ?? 'OPEN',
+          start_time: inc.opened_at || inc.start_time,
           time: inc.opened_age ?? (inc.opened_at || inc.start_time ? new Date(inc.opened_at || inc.start_time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : 'recently')
         })));
       }
 
-      // Merge pipelines
-      const rawPipes = (pRes.status === 'fulfilled' ? (pRes.value.pipelines || pRes.value.items) : null) ||
-                       (allPipes.status === 'fulfilled' ? (allPipes.value.pipelines || allPipes.value.items) : null) || [];
+      if (pRes.status === 'fulfilled' && pRes.value) {
+        const pList = pRes.value.pipelines || pRes.value.items || (Array.isArray(pRes.value) ? pRes.value : []);
+        setPipelinesList(pList);
+      }
 
-      if (rawPipes.length > 0) {
-        setPipelinesList(rawPipes.map(p => ({
-          name: p.pipeline_name ?? p.name ?? 'etl_pipeline',
-          status: p.status !== 'N/A' && p.status ? p.status : (p.has_open_incident ? 'Failed' : 'Success'),
-          runs: p.total_runs ?? p.runs ?? 1,
-          successRate: p.success_rate != null && p.success_rate !== 'N/A' ? `${parseFloat(p.success_rate).toFixed(1)}%` : (p.has_open_incident ? '0.0%' : '100.0%'),
-          avgDuration: p.avg_duration_seconds ? `${Math.round(p.avg_duration_seconds)}s` : (p.avg_duration || '0s')
-        })));
+      if (lRes.status === 'fulfilled' && lRes.value) {
+        const logs = lRes.value.logs || lRes.value.items || (Array.isArray(lRes.value) ? lRes.value : []);
+        setRuns(logs);
       }
     } catch (e) {
       console.error('Failed to load live overview data:', e);
@@ -110,132 +106,15 @@ export default function Overview() {
     loadData();
   }, []);
 
-  // Calculate unique pipelines count dynamically
-  const uniquePipelinesCount = useMemo(() => {
-    if (pipelinesList.length) {
-      const names = new Set(pipelinesList.map(p => p.name).filter(Boolean));
-      return names.size || pipelinesList.length;
-    }
-    return kpiRaw?.totalPipelines?.value || (kpiRaw?.kpis?.find(x => x.id === 'total_pipelines')?.value) || 0;
-  }, [pipelinesList, kpiRaw]);
+  // Distinct pipeline names for filter dropdown
+  const distinctPipelineNames = useMemo(() => {
+    return Array.from(new Set([
+      ...pipelinesList.map(p => p.pipeline_name || p.name),
+      ...runs.map(r => r.pipeline_name)
+    ].filter(Boolean)));
+  }, [pipelinesList, runs]);
 
-  // KPIs assembled directly from live API
-  const kpis = useMemo(() => {
-    const k = kpiRaw || {};
-    const successVal = k.successfulRuns?.value ?? (k.kpis?.find(x => x.id === 'success_rate')?.display) ?? 'N/A';
-    const failedVal = k.failedRuns?.value != null ? String(k.failedRuns.value) : ((k.kpis?.find(x => x.id === 'failed_runs')?.display) ?? '0');
-    const durationVal = k.avgDuration?.value ?? (k.kpis?.find(x => x.id === 'avg_duration')?.display) ?? 'N/A';
-    const incidentVal = k.activeIncidents?.value != null ? String(k.activeIncidents.value) : ((k.kpis?.find(x => x.id === 'active_incidents')?.display) ?? String(incidentsList.length));
-
-    return [
-      {
-        icon: GitBranch,
-        label: 'Total Pipelines',
-        value: String(uniquePipelinesCount),
-        delta: k.totalPipelines?.change || `${uniquePipelinesCount} unique models registered`,
-        isUp: true,
-        color: '#6366F1',
-        bg: '#EEF2FF'
-      },
-      {
-        icon: CheckCircle,
-        label: 'Successful Runs',
-        value: successVal,
-        delta: k.successfulRuns?.change || 'total runs passed',
-        isUp: parseFloat(successVal) > 70,
-        color: '#10B981',
-        bg: '#ECFDF5'
-      },
-      {
-        icon: XCircle,
-        label: 'Failed Runs',
-        value: failedVal,
-        delta: k.failedRuns?.change || `${failedVal} execution failures`,
-        isUp: false,
-        color: '#EF4444',
-        bg: '#FEF2F2'
-      },
-      {
-        icon: Clock,
-        label: 'Avg. Pipeline Duration',
-        value: durationVal,
-        delta: k.avgDuration?.change || 'average execution time',
-        isUp: true,
-        color: '#3B82F6',
-        bg: '#EFF6FF'
-      },
-      {
-        icon: AlertTriangle,
-        label: 'Active Incidents',
-        value: incidentVal,
-        delta: k.activeIncidents?.change || `${incidentVal} requiring attention`,
-        isUp: false,
-        color: '#8B5CF6',
-        bg: '#F5F3FF'
-      },
-    ];
-  }, [kpiRaw, uniquePipelinesCount, incidentsList]);
-
-  // Chart 1: Live Runs Over Time
-  const runsChart = useMemo(() => {
-    const charts = chartsData || {};
-    const labels = charts.labels || charts.charts?.labels || [];
-    const runs = charts.runsOverTime || charts.runs_over_time || charts.charts?.runs_over_time || {};
-
-    return labels.map((lbl, i) => {
-      const formattedLabel = typeof lbl === 'string' && lbl.includes('-')
-        ? new Date(lbl).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
-        : lbl;
-
-      return {
-        time: formattedLabel,
-        Success: (runs.success ?? [])[i] ?? 0,
-        Failed: (runs.failed ?? [])[i] ?? 0,
-        Running: (runs.running ?? [])[i] ?? 0,
-      };
-    });
-  }, [chartsData]);
-
-  // Chart 2: Live Success Rate Over Time
-  const successChart = useMemo(() => {
-    const charts = chartsData || {};
-    const labels = charts.labels || charts.charts?.labels || [];
-    const successRates = charts.successRateOverTime || charts.success_rate_over_time || charts.charts?.success_rate_over_time || [];
-
-    return labels.map((lbl, i) => {
-      const formattedLabel = typeof lbl === 'string' && lbl.includes('-')
-        ? new Date(lbl).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
-        : lbl;
-
-      return {
-        time: formattedLabel,
-        rate: parseFloat(successRates[i] ?? 0),
-      };
-    });
-  }, [chartsData]);
-
-  // Chart 3: Live Incidents Over Time
-  const incChart = useMemo(() => {
-    const charts = chartsData || {};
-    const labels = charts.labels || charts.charts?.labels || [];
-    const incidents = charts.incidentsOverTime || charts.incidents_over_time || charts.charts?.incidents_over_time || {};
-
-    return labels.map((lbl, i) => {
-      const formattedLabel = typeof lbl === 'string' && lbl.includes('-')
-        ? new Date(lbl).toLocaleDateString('en-US', { month: 'short', day: '2-digit' })
-        : lbl;
-
-      return {
-        time: formattedLabel,
-        High: (incidents.high ?? [])[i] ?? 0,
-        Medium: (incidents.medium ?? [])[i] ?? 0,
-      };
-    });
-  }, [chartsData]);
-
-  const [headerDatePreset, setHeaderDatePreset] = useState('30d');
-  const [customDateRange, setCustomDateRange] = useState(null);
-
+  // Handle header date range change
   const handleHeaderDateChange = (val) => {
     if (typeof val === 'string') {
       setHeaderDatePreset(val);
@@ -246,6 +125,168 @@ export default function Overview() {
     }
   };
 
+  // Real-time instant filtering across all parameters and date ranges
+  const filteredRuns = useMemo(() => {
+    const latestTimestamp = runs.length > 0
+      ? Math.max(...runs.map(r => new Date(r.start_time || 0).getTime()).filter(t => !isNaN(t) && t > 0))
+      : Date.now();
+
+    const now = Date.now();
+    const anchorTime = Math.max(now, latestTimestamp);
+
+    let minTime = 0;
+    let maxTime = Infinity;
+
+    if (headerDatePreset === '24h') {
+      minTime = anchorTime - 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '7d') {
+      minTime = anchorTime - 7 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '30d') {
+      minTime = anchorTime - 30 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === 'custom' && customDateRange) {
+      minTime = new Date(customDateRange.start).getTime();
+      maxTime = new Date(customDateRange.end).getTime() + 24 * 60 * 60 * 1000;
+    }
+
+    return runs.filter(r => {
+      const pName = (r.pipeline_name || '').toLowerCase();
+      const runId = String(r.run_id || '').toLowerCase();
+      const status = (r.status || '').toLowerCase();
+      const tool = (r.tool_name || r.source_tool || 'dbt').toLowerCase();
+      const errMsg = (r.error_message || '').toLowerCase();
+      const startTimeStr = r.start_time || '';
+      const runTime = startTimeStr ? new Date(startTimeStr).getTime() : 0;
+
+      const matchSearch = !search ||
+        pName.includes(search.toLowerCase()) ||
+        runId.includes(search.toLowerCase()) ||
+        tool.includes(search.toLowerCase()) ||
+        errMsg.includes(search.toLowerCase());
+
+      const matchStatus = statusFilter === 'All' || status === statusFilter.toLowerCase();
+      const matchPipeline = pipelineFilter === 'All' || r.pipeline_name === pipelineFilter;
+      const matchTool = toolFilter === 'All' || tool === toolFilter.toLowerCase();
+      const matchHeaderDate = headerDatePreset === 'all' || (runTime >= minTime && runTime <= maxTime);
+
+      return matchSearch && matchStatus && matchPipeline && matchTool && matchHeaderDate;
+    });
+  }, [runs, search, statusFilter, pipelineFilter, toolFilter, headerDatePreset, customDateRange]);
+
+  // Filtered incidents
+  const filteredIncidents = useMemo(() => {
+    return incidentsList.filter(inc => {
+      const matchPipeline = pipelineFilter === 'All' || inc.pipeline_name === pipelineFilter;
+      const matchSearch = !search || (inc.title || '').toLowerCase().includes(search.toLowerCase()) || (inc.pipeline_name || '').toLowerCase().includes(search.toLowerCase());
+      return matchPipeline && matchSearch;
+    });
+  }, [incidentsList, pipelineFilter, search]);
+
+  // Filtered unique pipelines count
+  const filteredUniquePipelinesCount = useMemo(() => {
+    const names = new Set(filteredRuns.map(r => r.pipeline_name).filter(Boolean));
+    return names.size;
+  }, [filteredRuns]);
+
+  const totalUniquePipelinesInSystem = useMemo(() => {
+    const names = new Set(runs.map(r => r.pipeline_name).filter(Boolean));
+    return names.size || 3;
+  }, [runs]);
+
+  // Derived KPI metrics strictly from filtered dataset
+  const totalRuns = filteredRuns.length;
+  const successfulRuns = filteredRuns.filter(r => (r.status || '').toLowerCase() === 'success').length;
+  const failedRuns = filteredRuns.filter(r => (r.status || '').toLowerCase() === 'failed').length;
+  const successRatePct = totalRuns > 0 ? ((successfulRuns / totalRuns) * 100).toFixed(1) : '0.0';
+
+  const avgDurationSec = totalRuns > 0
+    ? Math.round(filteredRuns.reduce((sum, r) => sum + (Number(r.duration || r.duration_seconds) || 0), 0) / totalRuns)
+    : 0;
+
+  // Chart 1: Real Runs Over Time derived from filtered dataset
+  const runsChart = useMemo(() => {
+    const dateMap = {};
+    filteredRuns.forEach(r => {
+      const dateKey = (r.start_time || '').substring(0, 10);
+      if (!dateKey) return;
+      const fmt = new Date(dateKey).toLocaleDateString('en-US', { month: 'short', day: '2-digit' });
+      if (!dateMap[fmt]) dateMap[fmt] = { time: fmt, Success: 0, Failed: 0, dateRaw: dateKey };
+      if ((r.status || '').toLowerCase() === 'success') {
+        dateMap[fmt].Success += 1;
+      } else {
+        dateMap[fmt].Failed += 1;
+      }
+    });
+
+    const entries = Object.values(dateMap);
+    entries.sort((a, b) => a.dateRaw.localeCompare(b.dateRaw));
+    return entries;
+  }, [filteredRuns]);
+
+  // Chart 2: Real Success Rate Over Time derived from filtered dataset
+  const successChart = useMemo(() => {
+    return runsChart.map(item => {
+      const total = item.Success + item.Failed;
+      const rate = total > 0 ? Math.round((item.Success / total) * 100) : 0;
+      return { time: item.time, rate };
+    });
+  }, [runsChart]);
+
+  // Chart 3: Real Incidents Over Time
+  const incidentsChart = useMemo(() => {
+    return runsChart.map(item => ({
+      time: item.time,
+      count: item.Failed
+    }));
+  }, [runsChart]);
+
+  // Filtered Deduplicated Pipelines for Monitoring List
+  const monitoredPipelines = useMemo(() => {
+    const map = new Map();
+    filteredRuns.forEach(r => {
+      const name = r.pipeline_name;
+      const existing = map.get(name);
+      const isSuccess = (r.status || '').toLowerCase() === 'success';
+
+      if (!existing) {
+        map.set(name, {
+          name,
+          runs: 1,
+          successRuns: isSuccess ? 1 : 0,
+          status: isSuccess ? 'Success' : 'Failed',
+          totalDuration: Number(r.duration || r.duration_seconds) || 0,
+          source_tool: r.tool_name || 'snowflake',
+          target_tool: 'snowflake',
+          etl_tool: r.tool_name || 'dbt'
+        });
+      } else {
+        map.set(name, {
+          ...existing,
+          runs: existing.runs + 1,
+          successRuns: existing.successRuns + (isSuccess ? 1 : 0),
+          status: (!isSuccess || existing.status === 'Failed') ? 'Failed' : existing.status,
+          totalDuration: existing.totalDuration + (Number(r.duration || r.duration_seconds) || 0)
+        });
+      }
+    });
+
+    return Array.from(map.values()).map(p => ({
+      ...p,
+      successRate: `${((p.successRuns / p.runs) * 100).toFixed(1)}%`,
+      avgDuration: `${Math.round(p.totalDuration / p.runs)}s`
+    }));
+  }, [filteredRuns]);
+
+  const clearFilters = () => {
+    setSearch('');
+    setPipelineFilter('All');
+    setStatusFilter('All');
+    setToolFilter('All');
+    setHeaderDatePreset('all');
+    setCustomDateRange(null);
+  };
+
+  const hasActiveFilters = search || pipelineFilter !== 'All' || statusFilter !== 'All' || toolFilter !== 'All' || headerDatePreset !== 'all';
+
   return (
     <div className="fade-in">
       <PageHeader
@@ -255,226 +296,390 @@ export default function Overview() {
         onDateChange={handleHeaderDateChange}
       />
 
-      {loading && !kpiRaw ? (
-        <LoadingSpinner />
-      ) : (
-        <div className="page-body">
-          {/* Top 5 KPI Cards */}
-          <div className="kpi-grid-5">
-            {kpis.map((k, i) => {
-              const Icon = k.icon;
-              return (
-                <div key={i} className="kpi-card">
-                  <div className="kpi-card-header">
-                    <div className="kpi-icon" style={{ background: k.bg, color: k.color }}>
-                      <Icon size={18} />
-                    </div>
-                    <span className="kpi-label">{k.label}</span>
-                  </div>
-                  <div className="kpi-value">{k.value}</div>
-                  <div className={`kpi-delta ${k.isUp ? 'up' : 'down'}`}>
-                    {k.isUp ? <ArrowUpRight size={13} /> : <ArrowDownRight size={13} />}
-                    <span>{k.delta}</span>
-                  </div>
-                  <div className="sparkline-container">
-                    <SparkLine color={k.color} />
-                  </div>
-                </div>
-              );
-            })}
+      <div className="page-body">
+        {/* 1. TOP FILTERS TOOLBAR (Placed at the very top of the page body) */}
+        <div className="filters-bar">
+          <div className="search-box">
+            <Search size={14} />
+            <input
+              type="text"
+              placeholder="Search pipelines, error diagnostics..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
           </div>
 
-          {/* 3 Middle Charts */}
-          <div className="grid-3 mt-4">
-            {/* Chart 1: Pipeline Runs Over Time */}
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Pipeline Runs Over Time</div>
-                  <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10B981' }} /> Success
-                    </span>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444' }} /> Failed
-                    </span>
-                  </div>
-                </div>
-                <select className="select-control" style={{ minWidth: 100 }}>
-                  <option>All Dates</option>
-                </select>
-              </div>
-              <ResponsiveContainer width="100%" height={170}>
-                <BarChart data={runsChart} barSize={6}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Bar dataKey="Success" fill="#10B981" stackId="a" />
-                  <Bar dataKey="Failed" fill="#EF4444" stackId="a" />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="filter-select">
+            <label>Pipeline</label>
+            <select
+              className="select-control"
+              value={pipelineFilter}
+              onChange={e => setPipelineFilter(e.target.value)}
+            >
+              <option value="All">All Pipelines</option>
+              {distinctPipelineNames.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
 
-            {/* Chart 2: Pipeline Success Rate Over Time */}
-            <div className="card">
-              <div className="card-header">
-                <div className="card-title">Pipeline Success Rate Over Time</div>
-                <select className="select-control" style={{ minWidth: 100 }}>
-                  <option>All Dates</option>
-                </select>
-              </div>
-              <ResponsiveContainer width="100%" height={190}>
-                <AreaChart data={successChart}>
-                  <defs>
-                    <linearGradient id="successGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.25} />
-                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis domain={[0, 100]} tickFormatter={v => `${v}%`} tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} formatter={v => [`${v}%`, 'Success Rate']} />
-                  <Area type="monotone" dataKey="rate" stroke="#10B981" fill="url(#successGrad)" strokeWidth={2} dot={false} />
-                </AreaChart>
-              </ResponsiveContainer>
-            </div>
+          <div className="filter-select">
+            <label>Status</label>
+            <select
+              className="select-control"
+              value={statusFilter}
+              onChange={e => setStatusFilter(e.target.value)}
+            >
+              <option value="All">All Statuses</option>
+              <option value="Success">Success</option>
+              <option value="Failed">Failed</option>
+            </select>
+          </div>
 
-            {/* Chart 3: Incidents Over Time */}
-            <div className="card">
-              <div className="card-header">
-                <div>
-                  <div className="card-title">Incidents Over Time</div>
-                  <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
-                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                      <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444' }} /> High
-                    </span>
-                  </div>
-                </div>
-                <select className="select-control" style={{ minWidth: 100 }}>
-                  <option>All Dates</option>
-                </select>
+          <div className="filter-select">
+            <label>Engine / Tool</label>
+            <select
+              className="select-control"
+              value={toolFilter}
+              onChange={e => setToolFilter(e.target.value)}
+            >
+              <option value="All">All Engines</option>
+              <option value="dbt">dbt</option>
+              <option value="snowflake">Snowflake</option>
+            </select>
+          </div>
+
+          {hasActiveFilters && (
+            <button className="clear-filters-btn" onClick={clearFilters} title="Reset all filters">
+              <RotateCcw size={12} style={{ display: 'inline', marginRight: 4 }} />
+              Reset Filters
+            </button>
+          )}
+        </div>
+
+        {/* Active Filter Chips Bar */}
+        {hasActiveFilters && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap', marginTop: 10 }}>
+            <span style={{ fontSize: 11, color: 'var(--text-secondary)', display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+              <Tag size={12} /> Active Scope:
+            </span>
+
+            {pipelineFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Pipeline: <strong>{pipelineFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => setPipelineFilter('All')} />
+              </span>
+            )}
+
+            {statusFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Status: <strong>{statusFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => setStatusFilter('All')} />
+              </span>
+            )}
+
+            {toolFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Engine: <strong>{toolFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => setToolFilter('All')} />
+              </span>
+            )}
+
+            {search && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Search: <strong>"{search}"</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => setSearch('')} />
+              </span>
+            )}
+
+            {headerDatePreset !== 'all' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Range: <strong>{headerDatePreset}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setHeaderDatePreset('all'); setCustomDateRange(null); }} />
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* 2. DYNAMIC TOP 5 KPI CARDS (100% Reactive to top filters and date range) */}
+        <div className="kpi-grid-5 mt-4">
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#EEF2FF', color: '#6366F1' }}>
+                <GitBranch size={18} />
               </div>
-              <ResponsiveContainer width="100%" height={170}>
-                <BarChart data={incChart} barSize={6}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#F1F5F9" vertical={false} />
-                  <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                  <Tooltip {...TOOLTIP_STYLE} />
-                  <Bar dataKey="High" fill="#EF4444" stackId="b" />
-                </BarChart>
-              </ResponsiveContainer>
+              <span className="kpi-label">{pipelineFilter !== 'All' ? 'Selected Pipeline' : 'Total Pipelines'}</span>
+            </div>
+            <div className="kpi-value" style={{ fontSize: pipelineFilter !== 'All' ? 18 : 24, fontWeight: 700, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              {pipelineFilter !== 'All' ? pipelineFilter : filteredUniquePipelinesCount}
+            </div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>{pipelineFilter !== 'All' ? `1 specific pipeline` : `${filteredUniquePipelinesCount} unique registered models`}</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color="#6366F1" data={filteredRuns.map(r => Number(r.duration || 0))} />
             </div>
           </div>
 
-          {/* 3 Bottom Cards */}
-          <div className="grid-3 mt-4">
-            {/* Card 1: Data Observability Health */}
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Data Observability Health</span>
-                <button className="card-link" onClick={() => navigate('/observability')}>
-                  View all
-                </button>
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#ECFDF5', color: '#10B981' }}>
+                <CheckCircle size={18} />
               </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {healthData.map((h) => (
-                  <div key={h.name} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 90, fontSize: 12.5, fontWeight: 500 }}>{h.name}</div>
-                    <div style={{ width: 50, textAlign: 'right', fontSize: 12, fontWeight: 600 }}>{h.pct}%</div>
-                    <div style={{ flex: 1 }}>
-                      <div className="progress-track">
-                        <div className="progress-fill" style={{ width: `${Math.min(h.pct, 100)}%`, background: h.color }} />
-                      </div>
-                    </div>
-                    <div className={`status-pill ${h.status.toLowerCase()}`} style={{ fontSize: 10.5, padding: '2px 7px' }}>
-                      {h.status}
-                    </div>
-                  </div>
-                ))}
-              </div>
+              <span className="kpi-label">Successful Runs</span>
             </div>
-
-            {/* Card 2: Recent Incidents */}
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Recent Incidents</span>
-                <button className="card-link" onClick={() => navigate('/incidents')}>
-                  View all
-                </button>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-                {incidentsList.map((inc, i) => (
-                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 8, paddingBottom: 8, borderBottom: i < incidentsList.length - 1 ? '1px solid var(--border-subtle)' : 'none' }}>
-                    <AlertTriangle size={14} style={{ color: '#EF4444', marginTop: 2, flexShrink: 0 }} />
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
-                        {inc.title}
-                      </div>
-                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                        {inc.desc}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: 2, flexShrink: 0 }}>
-                      <span className={`status-pill ${inc.severity.toLowerCase()}`} style={{ fontSize: 10, padding: '1px 6px' }}>
-                        {inc.severity}
-                      </span>
-                      <span style={{ fontSize: 10.5, color: 'var(--text-muted)' }}>{inc.time}</span>
-                    </div>
-                  </div>
-                ))}
-              </div>
-              <button className="card-link" style={{ marginTop: 8 }} onClick={() => navigate('/incidents')}>
-                View all incidents →
-              </button>
+            <div className="kpi-value">{successRatePct}%</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>{successfulRuns}/{totalRuns} runs passed</span>
             </div>
+            <div className="sparkline-container">
+              <SparkLine color="#10B981" data={filteredRuns.map(r => ((r.status || '').toLowerCase() === 'success' ? 100 : 0))} />
+            </div>
+          </div>
 
-            {/* Card 3: Pipeline Monitoring */}
-            <div className="card">
-              <div className="card-header">
-                <span className="card-title">Pipeline Monitoring</span>
-                <button className="card-link" onClick={() => navigate('/pipelines')}>
-                  View all
-                </button>
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#FEF2F2', color: '#EF4444' }}>
+                <XCircle size={18} />
               </div>
-              <div className="table-wrapper">
-                <table className="vithi-table" style={{ fontSize: 11.5 }}>
-                  <thead>
-                    <tr>
-                      <th>Pipeline</th>
-                      <th>Status</th>
-                      <th>Runs</th>
-                      <th>Success Rate</th>
-                      <th>Avg. Duration</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {pipelinesList.map((p, i) => (
-                      <tr key={i}>
-                        <td style={{ fontWeight: 500, maxWidth: 100, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                          {p.name}
-                        </td>
-                        <td>
-                          <span className={`status-pill ${p.status.toLowerCase()}`} style={{ fontSize: 10, padding: '1px 6px' }}>
-                            {p.status}
-                          </span>
-                        </td>
-                        <td>{p.runs}</td>
-                        <td style={{ color: '#10B981', fontWeight: 600 }}>{p.successRate}</td>
-                        <td>{p.avgDuration}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
+              <span className="kpi-label">Failed Runs</span>
+            </div>
+            <div className="kpi-value">{failedRuns}</div>
+            <div className={`kpi-delta ${failedRuns > 0 ? 'down' : 'up'}`}>
+              {failedRuns > 0 ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
+              <span>{failedRuns > 0 ? `${failedRuns} execution failures` : '0 failures'}</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color={failedRuns > 0 ? '#EF4444' : '#10B981'} data={filteredRuns.map(r => ((r.status || '').toLowerCase() === 'failed' ? 100 : 0))} />
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#EFF6FF', color: '#3B82F6' }}>
+                <Clock size={18} />
               </div>
-              <button className="card-link" style={{ marginTop: 8 }} onClick={() => navigate('/pipelines')}>
-                View all pipelines →
-              </button>
+              <span className="kpi-label">Avg. Pipeline Duration</span>
+            </div>
+            <div className="kpi-value">{avgDurationSec}s</div>
+            <div className="kpi-delta up">
+              <ArrowUpRight size={13} />
+              <span>{totalRuns > 0 ? `${avgDurationSec}s average runtime` : 'No runs'}</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color="#3B82F6" data={filteredRuns.map(r => Number(r.duration || 0))} />
+            </div>
+          </div>
+
+          <div className="kpi-card">
+            <div className="kpi-card-header">
+              <div className="kpi-icon" style={{ background: '#F5F3FF', color: '#8B5CF6' }}>
+                <AlertTriangle size={18} />
+              </div>
+              <span className="kpi-label">Active Incidents</span>
+            </div>
+            <div className="kpi-value">{filteredIncidents.length}</div>
+            <div className={`kpi-delta ${filteredIncidents.length > 0 ? 'down' : 'up'}`}>
+              {filteredIncidents.length > 0 ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
+              <span>{filteredIncidents.length > 0 ? `${filteredIncidents.length} requiring attention` : 'All healthy'}</span>
+            </div>
+            <div className="sparkline-container">
+              <SparkLine color={filteredIncidents.length > 0 ? '#EF4444' : '#10B981'} data={filteredIncidents.map((_, i) => i + 1)} />
             </div>
           </div>
         </div>
-      )}
+
+        {/* 3 Middle Charts: 100% derived dynamically from filtered subset */}
+        <div className="grid-3 mt-4">
+          {/* Chart 1: Pipeline Runs Over Time */}
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Pipeline Runs Over Time</div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#10B981' }} /> Success
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444' }} /> Failed
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={170}>
+              <BarChart data={runsChart} barSize={6}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip {...TOOLTIP_STYLE} />
+                <Bar dataKey="Success" fill="#10B981" stackId="a" />
+                <Bar dataKey="Failed" fill="#EF4444" stackId="a" />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Chart 2: Pipeline Success Rate Over Time */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Pipeline Success Rate Over Time</div>
+            </div>
+            <ResponsiveContainer width="100%" height={190}>
+              <AreaChart data={successChart}>
+                <defs>
+                  <linearGradient id="successGrad" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.25} />
+                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis domain={[0, 100]} tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} unit="%" />
+                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`${v}%`, 'Success Rate']} />
+                <Area type="monotone" dataKey="rate" stroke="#10B981" strokeWidth={2} fill="url(#successGrad)" />
+              </AreaChart>
+            </ResponsiveContainer>
+          </div>
+
+          {/* Chart 3: Incidents Over Time */}
+          <div className="card">
+            <div className="card-header">
+              <div>
+                <div className="card-title">Incidents Over Time</div>
+                <div style={{ display: 'flex', gap: 12, marginTop: 6, fontSize: 11, color: 'var(--text-secondary)' }}>
+                  <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4 }}>
+                    <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#EF4444' }} /> Failures
+                  </span>
+                </div>
+              </div>
+            </div>
+            <ResponsiveContainer width="100%" height={170}>
+              <BarChart data={incidentsChart} barSize={6}>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <Tooltip {...TOOLTIP_STYLE} />
+                <Bar dataKey="count" fill="#EF4444" radius={[2, 2, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+
+        {/* 3 Bottom Cards */}
+        <div className="grid-3 mt-4">
+          {/* Card 1: Data Observability Health */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Data Observability Health</div>
+              <button className="card-link" onClick={() => navigate('/observability')}>
+                View all &rarr;
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {healthData.map(h => (
+                <div key={h.name}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-primary)' }}>{h.name}</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)' }}>{h.pct}%</span>
+                      <span className={`status-pill ${h.status.toLowerCase()}`} style={{ fontSize: 10, padding: '1px 6px' }}>
+                        {h.status}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="progress-track" style={{ height: 4 }}>
+                    <div className="progress-fill" style={{ width: `${Math.min(h.pct, 100)}%`, background: h.color }} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Card 2: Recent Incidents */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Recent Incidents</div>
+              <button className="card-link" onClick={() => navigate('/incidents')}>
+                View all &rarr;
+              </button>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {filteredIncidents.length === 0 ? (
+                <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                  No active incidents for the selected scope.
+                </div>
+              ) : (
+                filteredIncidents.slice(0, 3).map((inc, i) => (
+                  <div key={i} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '8px 0', borderBottom: i < 2 ? '1px solid var(--border)' : 'none' }}>
+                    <div style={{ color: inc.severity === 'Critical' ? '#EF4444' : '#F59E0B', marginTop: 2, flexShrink: 0 }}>
+                      <AlertTriangle size={15} />
+                    </div>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-primary)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {inc.title}
+                        </div>
+                        <span className={`status-pill ${inc.severity.toLowerCase()}`} style={{ fontSize: 9.5, padding: '1px 5px' }}>
+                          {inc.severity}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                        {inc.desc}
+                      </div>
+                      <div style={{ fontSize: 10.5, color: 'var(--text-muted)', marginTop: 2 }}>{inc.time}</div>
+                    </div>
+                  </div>
+                ))
+              )}
+            </div>
+          </div>
+
+          {/* Card 3: Pipeline Monitoring */}
+          <div className="card">
+            <div className="card-header">
+              <div className="card-title">Pipeline Monitoring</div>
+              <button className="card-link" onClick={() => navigate('/pipelines')}>
+                View all &rarr;
+              </button>
+            </div>
+            <table className="vithi-table" style={{ fontSize: 11.5 }}>
+              <thead>
+                <tr>
+                  <th>Pipeline</th>
+                  <th>Status</th>
+                  <th>Runs</th>
+                  <th>Success</th>
+                </tr>
+              </thead>
+              <tbody>
+                {monitoredPipelines.length === 0 ? (
+                  <tr>
+                    <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No pipelines in scope</td>
+                  </tr>
+                ) : (
+                  monitoredPipelines.map(p => (
+                    <tr key={p.name} style={{ cursor: 'pointer' }} onClick={() => navigate('/pipelines')}>
+                      <td style={{ fontWeight: 600, color: 'var(--text-primary)', maxWidth: 110, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {p.name}
+                      </td>
+                      <td>
+                        <span className={`status-pill ${p.status.toLowerCase()}`} style={{ fontSize: 9.5, padding: '1px 5px' }}>
+                          {p.status}
+                        </span>
+                      </td>
+                      <td style={{ fontWeight: 600 }}>{p.runs}</td>
+                      <td style={{ color: p.status === 'Success' ? '#10B981' : '#EF4444', fontWeight: 600 }}>
+                        {p.successRate}
+                      </td>
+                    </tr>
+                  ))
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
