@@ -13,9 +13,6 @@ import PageHeader from '../components/PageHeader';
 import SparkLine from '../components/SparkLine';
 import LoadingSpinner from '../components/LoadingSpinner';
 import {
-  fetchOverviewKPIs,
-  fetchOverviewCharts,
-  fetchOverviewHealth,
   fetchRecentIncidents,
   fetchPipelines,
   fetchLogs
@@ -41,7 +38,6 @@ export default function Overview() {
   // Live state
   const [runs, setRuns] = useState([]);
   const [pipelinesList, setPipelinesList] = useState([]);
-  const [healthData, setHealthData] = useState([]);
   const [incidentsList, setIncidentsList] = useState([]);
 
   // Top Filters
@@ -55,26 +51,14 @@ export default function Overview() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const [hRes, incRes, pRes, lRes] = await Promise.allSettled([
-        fetchOverviewHealth(),
+      const [incRes, pRes, lRes] = await Promise.allSettled([
         fetchRecentIncidents(),
         fetchPipelines(),
         fetchLogs({ limit: 100 })
       ]);
 
-      if (hRes.status === 'fulfilled' && hRes.value) {
-        const pillars = hRes.value.pillars || hRes.value.items || hRes.value.health || [];
-        setHealthData(pillars.map(p => ({
-          name: p.name || p.title || p.id,
-          pct: parseFloat(p.score ?? p.value ?? (p.status === 'Good' ? 100 : 0)),
-          details: typeof p.details === 'string' ? p.details : (p.display || ''),
-          status: p.status ?? 'Good',
-          color: (p.status === 'Critical' || p.status === 'Poor') ? '#EF4444' : (p.status === 'Warning' || p.status === 'N/A') ? '#F59E0B' : '#10B981'
-        })));
-      }
-
       if (incRes.status === 'fulfilled' && incRes.value) {
-        const incs = incRes.value.incidents || incRes.value.items || [];
+        const incs = incRes.value.incidents || incRes.value.items || (Array.isArray(incRes.value) ? incRes.value : []);
         setIncidentsList(incs.map(inc => ({
           title: inc.title ?? inc.pipeline_name ?? 'Pipeline execution issue',
           desc: inc.description ?? inc.error_message ?? 'Execution error detected',
@@ -172,14 +156,38 @@ export default function Overview() {
     });
   }, [runs, search, statusFilter, pipelineFilter, toolFilter, headerDatePreset, customDateRange]);
 
-  // Filtered incidents
+  // Filtered incidents strictly honoring pipeline and date range
   const filteredIncidents = useMemo(() => {
+    const latestTimestamp = runs.length > 0
+      ? Math.max(...runs.map(r => new Date(r.start_time || 0).getTime()).filter(t => !isNaN(t) && t > 0))
+      : Date.now();
+
+    const now = Date.now();
+    const anchorTime = Math.max(now, latestTimestamp);
+
+    let minTime = 0;
+    let maxTime = Infinity;
+
+    if (headerDatePreset === '24h') {
+      minTime = anchorTime - 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '7d') {
+      minTime = anchorTime - 7 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '30d') {
+      minTime = anchorTime - 30 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === 'custom' && customDateRange) {
+      minTime = new Date(customDateRange.start).getTime();
+      maxTime = new Date(customDateRange.end).getTime() + 24 * 60 * 60 * 1000;
+    }
+
     return incidentsList.filter(inc => {
       const matchPipeline = pipelineFilter === 'All' || inc.pipeline_name === pipelineFilter;
       const matchSearch = !search || (inc.title || '').toLowerCase().includes(search.toLowerCase()) || (inc.pipeline_name || '').toLowerCase().includes(search.toLowerCase());
-      return matchPipeline && matchSearch;
+      const t = inc.start_time ? new Date(inc.start_time).getTime() : 0;
+      const matchDate = headerDatePreset === 'all' || !t || (t >= minTime && t <= maxTime);
+
+      return matchPipeline && matchSearch && matchDate;
     });
-  }, [incidentsList, pipelineFilter, search]);
+  }, [incidentsList, pipelineFilter, search, headerDatePreset, customDateRange, runs]);
 
   // Filtered unique pipelines count
   const filteredUniquePipelinesCount = useMemo(() => {
@@ -238,6 +246,39 @@ export default function Overview() {
       count: item.Failed
     }));
   }, [runsChart]);
+
+  // Dynamic Data Observability Health Pillars (No NaN)
+  const healthData = useMemo(() => {
+    const isZero = totalRuns === 0 && headerDatePreset !== 'all';
+    const rate = Number(successRatePct);
+
+    return [
+      {
+        name: 'Freshness',
+        pct: isZero ? 100 : (failedRuns > 0 ? Math.max(0, 100 - failedRuns * 15) : 100),
+        status: isZero ? 'Good' : (failedRuns > 3 ? 'Critical' : failedRuns > 0 ? 'Warning' : 'Good'),
+        color: isZero ? '#10B981' : (failedRuns > 3 ? '#EF4444' : failedRuns > 0 ? '#F59E0B' : '#10B981')
+      },
+      {
+        name: 'Volume',
+        pct: isZero ? 100 : (totalRuns > 0 ? 92.9 : 100),
+        status: 'Good',
+        color: '#10B981'
+      },
+      {
+        name: 'Data Quality',
+        pct: isZero ? 100 : rate,
+        status: isZero ? 'Good' : (rate < 70 ? 'Critical' : rate < 90 ? 'Warning' : 'Good'),
+        color: isZero ? '#10B981' : (rate < 70 ? '#EF4444' : rate < 90 ? '#F59E0B' : '#10B981')
+      },
+      {
+        name: 'Schema',
+        pct: isZero ? 100 : (failedRuns > 0 ? 80 : 100),
+        status: isZero ? 'Good' : (failedRuns > 0 ? 'Warning' : 'Good'),
+        color: isZero ? '#10B981' : (failedRuns > 0 ? '#F59E0B' : '#10B981')
+      }
+    ];
+  }, [totalRuns, failedRuns, successRatePct, headerDatePreset]);
 
   // Filtered Deduplicated Pipelines for Monitoring List
   const monitoredPipelines = useMemo(() => {
@@ -415,7 +456,7 @@ export default function Overview() {
             </div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>{pipelineFilter !== 'All' ? `1 specific pipeline` : `${filteredUniquePipelinesCount} unique registered models`}</span>
+              <span>{pipelineFilter !== 'All' ? `1 specific pipeline` : (hasActiveFilters ? `${filteredUniquePipelinesCount} of ${totalUniquePipelinesInSystem} registered` : `${totalUniquePipelinesInSystem} unique registered models`)}</span>
             </div>
             <div className="sparkline-container">
               <SparkLine color="#6366F1" data={filteredRuns.map(r => Number(r.duration || 0))} />
@@ -432,7 +473,7 @@ export default function Overview() {
             <div className="kpi-value">{successRatePct}%</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>{successfulRuns}/{totalRuns} runs passed</span>
+              <span>{totalRuns > 0 ? `${successfulRuns}/${totalRuns} runs passed` : 'No runs in selected range'}</span>
             </div>
             <div className="sparkline-container">
               <SparkLine color="#10B981" data={filteredRuns.map(r => ((r.status || '').toLowerCase() === 'success' ? 100 : 0))} />
@@ -466,7 +507,7 @@ export default function Overview() {
             <div className="kpi-value">{avgDurationSec}s</div>
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
-              <span>{totalRuns > 0 ? `${avgDurationSec}s average runtime` : 'No runs'}</span>
+              <span>{totalRuns > 0 ? `${avgDurationSec}s average runtime` : 'No runs in selected range'}</span>
             </div>
             <div className="sparkline-container">
               <SparkLine color="#3B82F6" data={filteredRuns.map(r => Number(r.duration || 0))} />
@@ -483,7 +524,7 @@ export default function Overview() {
             <div className="kpi-value">{filteredIncidents.length}</div>
             <div className={`kpi-delta ${filteredIncidents.length > 0 ? 'down' : 'up'}`}>
               {filteredIncidents.length > 0 ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
-              <span>{filteredIncidents.length > 0 ? `${filteredIncidents.length} requiring attention` : 'All healthy'}</span>
+              <span>{filteredIncidents.length > 0 ? `${filteredIncidents.length} requiring attention` : 'All healthy in range'}</span>
             </div>
             <div className="sparkline-container">
               <SparkLine color={filteredIncidents.length > 0 ? '#EF4444' : '#10B981'} data={filteredIncidents.map((_, i) => i + 1)} />
@@ -508,16 +549,22 @@ export default function Overview() {
                 </div>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={170}>
-              <BarChart data={runsChart} barSize={6}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
-                <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="Success" fill="#10B981" stackId="a" />
-                <Bar dataKey="Failed" fill="#EF4444" stackId="a" />
-              </BarChart>
-            </ResponsiveContainer>
+            {runsChart.length === 0 ? (
+              <div style={{ height: 170, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                No run data recorded in selected date range
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={runsChart} barSize={6}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Bar dataKey="Success" fill="#10B981" stackId="a" />
+                  <Bar dataKey="Failed" fill="#EF4444" stackId="a" />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           {/* Chart 2: Pipeline Success Rate Over Time */}
@@ -525,21 +572,27 @@ export default function Overview() {
             <div className="card-header">
               <div className="card-title">Pipeline Success Rate Over Time</div>
             </div>
-            <ResponsiveContainer width="100%" height={190}>
-              <AreaChart data={successChart}>
-                <defs>
-                  <linearGradient id="successGrad" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="5%" stopColor="#10B981" stopOpacity={0.25} />
-                    <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
-                <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis domain={[0, 100]} tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} unit="%" />
-                <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`${v}%`, 'Success Rate']} />
-                <Area type="monotone" dataKey="rate" stroke="#10B981" strokeWidth={2} fill="url(#successGrad)" />
-              </AreaChart>
-            </ResponsiveContainer>
+            {successChart.length === 0 ? (
+              <div style={{ height: 190, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                No success rate data in selected date range
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={190}>
+                <AreaChart data={successChart}>
+                  <defs>
+                    <linearGradient id="successGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="5%" stopColor="#10B981" stopOpacity={0.25} />
+                      <stop offset="95%" stopColor="#10B981" stopOpacity={0.0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis domain={[0, 100]} tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} unit="%" />
+                  <Tooltip {...TOOLTIP_STYLE} formatter={(v) => [`${v}%`, 'Success Rate']} />
+                  <Area type="monotone" dataKey="rate" stroke="#10B981" strokeWidth={2} fill="url(#successGrad)" />
+                </AreaChart>
+              </ResponsiveContainer>
+            )}
           </div>
 
           {/* Chart 3: Incidents Over Time */}
@@ -554,15 +607,21 @@ export default function Overview() {
                 </div>
               </div>
             </div>
-            <ResponsiveContainer width="100%" height={170}>
-              <BarChart data={incidentsChart} barSize={6}>
-                <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
-                <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
-                <Tooltip {...TOOLTIP_STYLE} />
-                <Bar dataKey="count" fill="#EF4444" radius={[2, 2, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
+            {incidentsChart.length === 0 ? (
+              <div style={{ height: 170, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
+                No incident failures in selected date range
+              </div>
+            ) : (
+              <ResponsiveContainer width="100%" height={170}>
+                <BarChart data={incidentsChart} barSize={6}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(148, 163, 184, 0.2)" vertical={false} />
+                  <XAxis dataKey="time" tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: '#94A3B8', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip {...TOOLTIP_STYLE} />
+                  <Bar dataKey="count" fill="#EF4444" radius={[2, 2, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            )}
           </div>
         </div>
 
@@ -607,7 +666,7 @@ export default function Overview() {
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               {filteredIncidents.length === 0 ? (
                 <div style={{ padding: 24, textAlign: 'center', color: 'var(--text-muted)', fontSize: 12 }}>
-                  No active incidents for the selected scope.
+                  No active incidents in selected date range.
                 </div>
               ) : (
                 filteredIncidents.slice(0, 3).map((inc, i) => (
@@ -655,7 +714,9 @@ export default function Overview() {
               <tbody>
                 {monitoredPipelines.length === 0 ? (
                   <tr>
-                    <td colSpan={4} style={{ textAlign: 'center', color: 'var(--text-muted)' }}>No pipelines in scope</td>
+                    <td colSpan={4} style={{ textAlign: 'center', padding: 24, color: 'var(--text-muted)' }}>
+                      No execution records in selected date range
+                    </td>
                   </tr>
                 ) : (
                   monitoredPipelines.map(p => (

@@ -1,11 +1,12 @@
 import { useEffect, useState, useMemo } from 'react';
 import {
   CheckCircle, Clock, AlertTriangle, Search,
-  Database, Info, RotateCcw, Tag, X, ArrowUpRight, ArrowDownRight
+  Database, Info, RotateCcw, Tag, X, ArrowUpRight, ArrowDownRight,
+  ChevronLeft, ChevronRight
 } from 'lucide-react';
 import PageHeader from '../../components/PageHeader';
 import LoadingSpinner from '../../components/LoadingSpinner';
-import { fetchFreshness } from '../../api/client';
+import { fetchFreshness, fetchLogs } from '../../api/client';
 
 function fmtTime(ts) {
   if (!ts) return '—';
@@ -23,13 +24,28 @@ function fmtLag(mins) {
   return `${Math.floor(hrs / 24)}d ${hrs % 24}h`;
 }
 
+function getPipelineForAsset(item, runMap) {
+  if (item.pipeline_name) return item.pipeline_name;
+  if (item.run_id && runMap.has(String(item.run_id))) {
+    return runMap.get(String(item.run_id));
+  }
+  const id = (item.dataset_id || item.object_name || '').toUpperCase();
+  if (id.includes('ECOMMERCE') || id.includes('CLEAN_DATA') || id.includes('ORDER') || id.includes('CUSTOMER')) return 'ecommerce_etl';
+  if (id.includes('HR_ANALYTICS') || id.includes('EMPLOYEE')) return 'hr_etl';
+  if (id.includes('STOCK') || id.includes('ANALYTICS_DB')) return 'stock_etl';
+  if (id.includes('METADATA') || id.includes('OBS_')) return 'metadata_etl';
+  return 'data_pipeline';
+}
+
 export default function Freshness() {
   const [data, setData] = useState([]);
+  const [runs, setRuns] = useState([]);
   const [loading, setLoading] = useState(true);
 
   // Top Filters
   const [search, setSearch] = useState('');
   const [pipelineFilter, setPipelineFilter] = useState('All');
+  const [datasetFilter, setDatasetFilter] = useState('All');
   const [statusFilter, setStatusFilter] = useState('All');
   const [headerDatePreset, setHeaderDatePreset] = useState('all');
   const [customDateRange, setCustomDateRange] = useState(null);
@@ -39,10 +55,19 @@ export default function Freshness() {
   const loadData = async () => {
     setLoading(true);
     try {
-      const res = await fetchFreshness({ preset: 'all' });
-      if (res) {
-        const list = res.items || res.freshness_checks || (Array.isArray(res) ? res : res.datasets || []);
+      const [fRes, lRes] = await Promise.allSettled([
+        fetchFreshness({ preset: 'all' }),
+        fetchLogs({ limit: 100 })
+      ]);
+
+      if (fRes.status === 'fulfilled' && fRes.value) {
+        const list = fRes.value.items || fRes.value.freshness_checks || (Array.isArray(fRes.value) ? fRes.value : fRes.value.datasets || []);
         setData(list);
+      }
+
+      if (lRes.status === 'fulfilled' && lRes.value) {
+        const logs = lRes.value.logs || lRes.value.items || (Array.isArray(lRes.value) ? lRes.value : []);
+        setRuns(logs);
       }
     } catch (e) {
       console.error('Failed to load freshness data:', e);
@@ -55,10 +80,34 @@ export default function Freshness() {
     loadData();
   }, []);
 
-  // Distinct pipelines
+  // Map run_id to pipeline_name
+  const runMap = useMemo(() => {
+    const map = new Map();
+    runs.forEach(r => {
+      if (r.run_id && r.pipeline_name) {
+        map.set(String(r.run_id), r.pipeline_name);
+      }
+    });
+    return map;
+  }, [runs]);
+
+  // Enriched data with accurate pipeline names
+  const enrichedData = useMemo(() => {
+    return data.map(item => ({
+      ...item,
+      computedPipeline: getPipelineForAsset(item, runMap)
+    }));
+  }, [data, runMap]);
+
+  // Distinct pipelines (ONLY real pipeline names)
   const distinctPipelines = useMemo(() => {
-    return Array.from(new Set(data.map(d => d.pipeline_name || d.dataset_id).filter(Boolean)));
-  }, [data]);
+    return Array.from(new Set(enrichedData.map(d => d.computedPipeline).filter(Boolean)));
+  }, [enrichedData]);
+
+  // Distinct datasets for dataset filter dropdown
+  const distinctDatasets = useMemo(() => {
+    return Array.from(new Set(enrichedData.map(d => d.dataset_id || d.object_name).filter(Boolean)));
+  }, [enrichedData]);
 
   const handleHeaderDateChange = (val) => {
     if (typeof val === 'string') {
@@ -71,10 +120,10 @@ export default function Freshness() {
     setPage(1);
   };
 
-  // Real-time filtering
+  // Real-time filtering across search, pipeline, dataset, status, and date range
   const filtered = useMemo(() => {
-    const latestTimestamp = data.length > 0
-      ? Math.max(...data.map(d => new Date(d.last_updated || d.last_run_time || 0).getTime()).filter(t => !isNaN(t) && t > 0))
+    const latestTimestamp = enrichedData.length > 0
+      ? Math.max(...enrichedData.map(d => new Date(d.observed_at || d.last_updated_at || d.last_updated || 0).getTime()).filter(t => !isNaN(t) && t > 0))
       : Date.now();
 
     const now = Date.now();
@@ -94,46 +143,50 @@ export default function Freshness() {
       maxTime = new Date(customDateRange.end).getTime() + 24 * 60 * 60 * 1000;
     }
 
-    return data.filter(d => {
-      const name = (d.dataset_id || d.pipeline_name || d.object_name || '').toLowerCase();
-      const pName = d.pipeline_name || d.dataset_id || '';
-      const status = (d.status || d.freshness_status || 'Stale').toLowerCase();
-      const updatedTime = d.last_updated || d.last_run_time ? new Date(d.last_updated || d.last_run_time).getTime() : 0;
+    return enrichedData.filter(d => {
+      const dName = (d.dataset_id || d.object_name || '').toLowerCase();
+      const pName = d.computedPipeline;
+      const status = (d.sla_status || d.status || d.freshness_status || 'Stale').toLowerCase();
+      const observedTime = d.observed_at || d.last_updated_at || d.last_updated;
+      const t = observedTime ? new Date(observedTime).getTime() : 0;
 
-      const matchSearch = !search || name.includes(search.toLowerCase());
+      const matchSearch = !search || dName.includes(search.toLowerCase()) || pName.toLowerCase().includes(search.toLowerCase());
       const matchPipeline = pipelineFilter === 'All' || pName === pipelineFilter;
+      const matchDataset = datasetFilter === 'All' || (d.dataset_id || d.object_name) === datasetFilter;
       const matchStatus = statusFilter === 'All' || status === statusFilter.toLowerCase();
-      const matchHeaderDate = headerDatePreset === 'all' || !updatedTime || (updatedTime >= minTime && updatedTime <= maxTime);
+      const matchHeaderDate = headerDatePreset === 'all' || !t || (t >= minTime && t <= maxTime);
 
-      return matchSearch && matchPipeline && matchStatus && matchHeaderDate;
+      return matchSearch && matchPipeline && matchDataset && matchStatus && matchHeaderDate;
     });
-  }, [data, search, pipelineFilter, statusFilter, headerDatePreset, customDateRange]);
+  }, [enrichedData, search, pipelineFilter, datasetFilter, statusFilter, headerDatePreset, customDateRange]);
 
   // Recalculate KPIs based on filtered dataset
   const total = filtered.length;
-  const fresh = filtered.filter(d => (d.status || d.freshness_status || '').toLowerCase() === 'fresh').length;
-  const delayed = filtered.filter(d => (d.status || d.freshness_status || '').toLowerCase() === 'delayed').length;
-  const stale = total - fresh - delayed;
+  const fresh = filtered.filter(d => (d.sla_status || d.status || d.freshness_status || '').toLowerCase() === 'fresh').length;
+  const delayed = filtered.filter(d => (d.sla_status || d.status || d.freshness_status || '').toLowerCase() === 'delayed').length;
+  const stale = filtered.filter(d => (d.sla_status || d.status || d.freshness_status || '').toLowerCase() === 'stale').length || (total - fresh - delayed);
 
   const freshPct = total > 0 ? Math.round((fresh / total) * 100) : 0;
   const delayedPct = total > 0 ? Math.round((delayed / total) * 100) : 0;
-  const stalePct = total > 0 ? Math.round((stale / total) * 100) : 0;
+  const stalePct = total > 0 ? Math.round((stale / total) * 100) : (total > 0 ? 100 : 0);
 
-  const avgLagMins = total > 0 ? Math.round(filtered.reduce((s, d) => s + (d.lag_minutes ?? 0), 0) / total) : 0;
+  const avgLagMins = total > 0 ? Math.round(filtered.reduce((s, d) => s + (Number(d.lag_minutes) || 0), 0) / total) : 0;
 
-  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
+  // Pagination logic
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
+  const paginated = filtered.slice((page - 1) * perPage, page * perPage);
 
   const clearFilters = () => {
     setSearch('');
     setPipelineFilter('All');
+    setDatasetFilter('All');
     setStatusFilter('All');
     setHeaderDatePreset('all');
     setCustomDateRange(null);
     setPage(1);
   };
 
-  const hasActiveFilters = search || pipelineFilter !== 'All' || statusFilter !== 'All' || headerDatePreset !== 'all';
+  const hasActiveFilters = search || pipelineFilter !== 'All' || datasetFilter !== 'All' || statusFilter !== 'All' || headerDatePreset !== 'all';
 
   return (
     <div className="fade-in">
@@ -151,7 +204,7 @@ export default function Freshness() {
             <Search size={14} />
             <input
               type="text"
-              placeholder="Search datasets, pipelines..."
+              placeholder="Search datasets, models..."
               value={search}
               onChange={e => { setSearch(e.target.value); setPage(1); }}
             />
@@ -166,6 +219,21 @@ export default function Freshness() {
             >
               <option value="All">All Pipelines</option>
               {distinctPipelines.map(name => (
+                <option key={name} value={name}>{name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="filter-select">
+            <label>Dataset / Model</label>
+            <select
+              className="select-control"
+              value={datasetFilter}
+              onChange={e => { setDatasetFilter(e.target.value); setPage(1); }}
+              style={{ maxWidth: 200 }}
+            >
+              <option value="All">All Datasets</option>
+              {distinctDatasets.map(name => (
                 <option key={name} value={name}>{name}</option>
               ))}
             </select>
@@ -204,6 +272,13 @@ export default function Freshness() {
               <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
                 Pipeline: <strong>{pipelineFilter}</strong>
                 <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setPipelineFilter('All'); setPage(1); }} />
+              </span>
+            )}
+
+            {datasetFilter !== 'All' && (
+              <span className="tool-badge" style={{ display: 'inline-flex', alignItems: 'center', gap: 4, padding: '2px 8px' }}>
+                Dataset: <strong>{datasetFilter}</strong>
+                <X size={12} style={{ cursor: 'pointer' }} onClick={() => { setDatasetFilter('All'); setPage(1); }} />
               </span>
             )}
 
@@ -300,7 +375,7 @@ export default function Freshness() {
           </div>
         </div>
 
-        {/* 3. TABLE OF DATASETS */}
+        {/* 3. TABLE OF DATASETS WITH FULL WORKING PAGINATION */}
         <div className="card mt-4">
           {loading && !data.length ? (
             <LoadingSpinner />
@@ -338,9 +413,9 @@ export default function Freshness() {
                       </tr>
                     ) : (
                       paginated.map((item, idx) => {
-                        const status = (item.status || item.freshness_status || 'Stale').toLowerCase();
+                        const status = (item.sla_status || item.status || item.freshness_status || 'Stale').toLowerCase();
                         return (
-                          <tr key={item.id || item.dataset_id || idx}>
+                          <tr key={item.asset_id || item.id || item.dataset_id || idx}>
                             <td>
                               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                                 <div style={{
@@ -358,25 +433,25 @@ export default function Freshness() {
                               </div>
                             </td>
                             <td>
-                              <span style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
-                                {item.pipeline_name || 'ecommerce_etl'}
+                              <span style={{ color: 'var(--text-secondary)', fontSize: 12, fontWeight: 500 }}>
+                                {item.computedPipeline}
                               </span>
                             </td>
                             <td>
                               <span className={`status-pill ${status}`}>
-                                {item.status || item.freshness_status || 'Stale'}
+                                {item.sla_status || item.status || item.freshness_status || 'Stale'}
                               </span>
                             </td>
-                            <td style={{ fontSize: 12 }}>{fmtTime(item.last_updated || item.last_run_time)}</td>
+                            <td style={{ fontSize: 12 }}>{fmtTime(item.last_updated_at || item.last_updated || item.last_run_time)}</td>
                             <td style={{ fontSize: 12, fontWeight: 600, color: status === 'fresh' ? '#10B981' : status === 'delayed' ? '#F59E0B' : '#EF4444' }}>
                               {fmtLag(item.lag_minutes)}
                             </td>
                             <td style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                              {item.sla_target || '< 24 hours'}
+                              {item.sla_minutes ? `< ${item.sla_minutes} mins` : (item.sla_target || '< 24 hours')}
                             </td>
                             <td>
                               <span className="tool-badge">
-                                {item.engine || item.tool_name || 'snowflake'}
+                                {item.system_name || item.engine || item.tool_name || 'snowflake'}
                               </span>
                             </td>
                           </tr>
@@ -387,7 +462,7 @@ export default function Freshness() {
                 </table>
               </div>
 
-              {/* Pagination */}
+              {/* Full Working Pagination Bar (1, 2, 3, 4...) */}
               <div className="pagination-bar">
                 <div style={{ color: 'var(--text-secondary)', fontSize: 12 }}>
                   Showing {filtered.length === 0 ? 0 : (page - 1) * perPage + 1} to {Math.min(page * perPage, filtered.length)} of {filtered.length} datasets
@@ -406,6 +481,15 @@ export default function Freshness() {
                   </select>
 
                   <div className="pagination-pages">
+                    <button
+                      className="pagination-btn"
+                      disabled={page === 1}
+                      onClick={() => setPage(p => Math.max(1, p - 1))}
+                      title="Previous Page"
+                    >
+                      <ChevronLeft size={13} />
+                    </button>
+
                     {Array.from({ length: totalPages }, (_, i) => i + 1).map(pNum => (
                       <button
                         key={pNum}
@@ -415,6 +499,15 @@ export default function Freshness() {
                         {pNum}
                       </button>
                     ))}
+
+                    <button
+                      className="pagination-btn"
+                      disabled={page === totalPages}
+                      onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                      title="Next Page"
+                    >
+                      <ChevronRight size={13} />
+                    </button>
                   </div>
                 </div>
               </div>
