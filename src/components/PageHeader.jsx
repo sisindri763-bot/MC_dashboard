@@ -113,16 +113,11 @@ export default function PageHeader({ title, subtitle, onRefresh, onDateChange })
           </button>
 
           {datePickerOpen && (
-            <div style={{
-              position: 'absolute', right: 0, top: '100%', marginTop: 6,
-              background: 'var(--bg-card)', border: '1px solid var(--border)',
-              borderRadius: 10, boxShadow: '0 10px 30px rgba(0,0,0,0.15)',
-              zIndex: 100, minWidth: 260, padding: 14
-            }}>
-              <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 10, color: 'var(--text-primary)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <span>Date Range Presets</span>
+            <div className="date-picker-popover">
+              <div className="date-picker-popover-header">
+                <span className="date-picker-popover-title">Date Range Presets</span>
                 <button
-                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--text-muted)' }}
+                  className="date-picker-close-btn"
                   onClick={() => setDatePickerOpen(false)}
                 >
                   <X size={14} />
@@ -133,51 +128,38 @@ export default function PageHeader({ title, subtitle, onRefresh, onDateChange })
                 {presets.map(p => (
                   <button
                     key={p.id}
-                    type="button"
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                      padding: '8px 10px', borderRadius: 6, fontSize: 12, fontWeight: 500,
-                      border: 'none', cursor: 'pointer', textAlign: 'left',
-                      background: selectedPreset === p.id ? '#ECFDF5' : 'transparent',
-                      color: selectedPreset === p.id ? '#047857' : 'var(--text-primary)'
-                    }}
+                    className={`preset-btn ${selectedPreset === p.id ? 'active' : ''}`}
                     onClick={() => handleSelectPreset(p.id)}
                   >
                     <span>{p.label}</span>
-                    {selectedPreset === p.id && <Check size={14} color="#10B981" />}
+                    {selectedPreset === p.id && <Check size={14} color="#059669" />}
                   </button>
                 ))}
               </div>
 
-              <div style={{ borderTop: '1px solid var(--border)', marginTop: 10, paddingTop: 10 }}>
-                <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-secondary)', marginBottom: 8 }}>
-                  Custom Range
-                </div>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-                  <input
-                    type="date"
-                    className="select-control"
-                    style={{ width: '100%', fontSize: 11.5 }}
-                    value={customStart}
-                    onChange={e => setCustomStart(e.target.value)}
-                  />
-                  <input
-                    type="date"
-                    className="select-control"
-                    style={{ width: '100%', fontSize: 11.5 }}
-                    value={customEnd}
-                    onChange={e => setCustomEnd(e.target.value)}
-                  />
-                  <button
-                    type="button"
-                    className="export-btn"
-                    style={{ marginTop: 4, width: '100%', justifyContent: 'center', padding: '6px', fontSize: 12 }}
-                    onClick={handleApplyCustom}
-                    disabled={!customStart || !customEnd}
-                  >
-                    Apply Range
-                  </button>
-                </div>
+              <div className="date-picker-divider" />
+
+              <span className="custom-range-label">Custom Range</span>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <input
+                  type="date"
+                  className="custom-date-input"
+                  value={customStart}
+                  onChange={e => setCustomStart(e.target.value)}
+                />
+                <input
+                  type="date"
+                  className="custom-date-input"
+                  value={customEnd}
+                  onChange={e => setCustomEnd(e.target.value)}
+                />
+                <button
+                  className="apply-date-btn"
+                  onClick={handleApplyCustom}
+                  disabled={!customStart || !customEnd}
+                >
+                  Apply Range
+                </button>
               </div>
             </div>
           )}

@@ -951,3 +951,158 @@ html.dark ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.12); }
 .fade-in {
   animation: fadeIn 0.2s ease-out;
 }
+
+/* ── Export and Primary Header Action Buttons (Matching Screenshot 2) ───── */
+.export-btn, .primary-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #00966B;
+  color: #FFFFFF !important;
+  border: none;
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+  transition: all 0.15s ease;
+}
+
+.export-btn:hover, .primary-btn:hover {
+  background: #00875A;
+}
+
+.export-btn svg, .primary-btn svg {
+  color: #FFFFFF;
+}
+
+/* ── Date Range Presets Popover (Matching Screenshot 2) ─────────────────── */
+.date-picker-popover {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  width: 270px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 16px;
+  box-shadow: 0 14px 34px -4px rgba(0, 0, 0, 0.12), 0 4px 12px -2px rgba(0, 0, 0, 0.06);
+  z-index: 9999;
+}
+
+.date-picker-popover-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.date-picker-popover-title {
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+
+.date-picker-close-btn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2px;
+  border-radius: 4px;
+  transition: color 0.15s ease;
+}
+
+.date-picker-close-btn:hover {
+  color: var(--text-primary);
+}
+
+.preset-btn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 8px 12px;
+  border-radius: 8px;
+  border: 1px solid transparent;
+  background: none;
+  font-size: 12.5px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  text-align: left;
+  transition: all 0.15s ease;
+}
+
+.preset-btn:hover {
+  background: var(--bg-card-subtle);
+}
+
+.preset-btn.active {
+  background: #ECFDF5;
+  color: #059669;
+  font-weight: 600;
+}
+
+.date-picker-divider {
+  border-top: 1px solid var(--border);
+  margin: 12px 0;
+}
+
+.custom-range-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  display: block;
+  margin-bottom: 8px;
+}
+
+.custom-date-input {
+  width: 100%;
+  height: 36px;
+  padding: 0 10px;
+  font-size: 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-main);
+  color: var(--text-primary);
+  outline: none;
+  transition: border-color 0.15s;
+  box-sizing: border-box;
+}
+
+.custom-date-input:focus {
+  border-color: #059669;
+  box-shadow: 0 0 0 2px rgba(5, 150, 105, 0.15);
+}
+
+.apply-date-btn {
+  width: 100%;
+  height: 38px;
+  margin-top: 8px;
+  background: #00966B;
+  color: #FFFFFF !important;
+  border: none;
+  border-radius: 8px;
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background 0.15s;
+}
+
+.apply-date-btn:hover:not(:disabled) {
+  background: #00875A;
+}
+
+.apply-date-btn:disabled {
+  background: #A7F3D0;
+  color: #FFFFFF !important;
+  cursor: not-allowed;
+}
