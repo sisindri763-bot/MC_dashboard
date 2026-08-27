@@ -1,11 +1,11 @@
 import { Calendar, RefreshCw, Download, ChevronDown, Check, X } from 'lucide-react';
 import { useState, useMemo, useRef, useEffect } from 'react';
 
-export default function PageHeader({ title, subtitle, onRefresh, onDateChange }) {
+export default function PageHeader({ title, subtitle, onRefresh, onDateChange, latestTimestamp }) {
   const [env, setEnv] = useState('Production');
   const [refreshing, setRefreshing] = useState(false);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
-  const [selectedPreset, setSelectedPreset] = useState('30d');
+  const [selectedPreset, setSelectedPreset] = useState('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
   const popoverRef = useRef(null);
@@ -44,7 +44,7 @@ export default function PageHeader({ title, subtitle, onRefresh, onDateChange })
 
   // Dynamic date range label
   const dateRangeLabel = useMemo(() => {
-    const end = new Date();
+    const end = latestTimestamp ? new Date(latestTimestamp) : new Date();
     if (selectedPreset === 'all') {
       return 'All Recorded History';
     }
@@ -64,7 +64,7 @@ export default function PageHeader({ title, subtitle, onRefresh, onDateChange })
       return `${customStart} – ${customEnd}`;
     }
     return 'Select Date Range';
-  }, [selectedPreset, customStart, customEnd]);
+  }, [selectedPreset, customStart, customEnd, latestTimestamp]);
 
   const handleSelectPreset = (presetId) => {
     setSelectedPreset(presetId);

@@ -137,8 +137,32 @@ export default function Volume() {
     return Array.from(map.entries()).map(([key, label]) => ({ key, label }));
   }, [rawData]);
 
-  // Reactive filtering based on Top Filters
+  // Extract latest timestamp for accurate relative date range calculation
+  const latestTimestamp = useMemo(() => {
+    const validTimestamps = rawData
+      .map(d => (d.created_at ? new Date(d.created_at).getTime() : 0))
+      .filter(t => !isNaN(t) && t > 0);
+    return validTimestamps.length > 0 ? Math.max(...validTimestamps) : Date.now();
+  }, [rawData]);
+
+  // Reactive filtering based on Top Filters and Date Ranges
   const filteredData = useMemo(() => {
+    const anchorTime = latestTimestamp;
+
+    let minTime = 0;
+    let maxTime = Infinity;
+
+    if (headerDatePreset === '24h') {
+      minTime = anchorTime - 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '7d') {
+      minTime = anchorTime - 7 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === '30d') {
+      minTime = anchorTime - 30 * 24 * 60 * 60 * 1000;
+    } else if (headerDatePreset === 'custom' && customDateRange?.start && customDateRange?.end) {
+      minTime = new Date(customDateRange.start).getTime();
+      maxTime = new Date(customDateRange.end).getTime() + (24 * 60 * 60 * 1000 - 1);
+    }
+
     return rawData.filter(d => {
       const pName = d.pipeline_name ?? '';
       const srcName = d.source_dataset ?? '';
@@ -159,21 +183,21 @@ export default function Volume() {
       // Status match
       const matchStatus = statusFilter === 'All' || status.toLowerCase() === statusFilter.toLowerCase();
 
-      // Date match
+      // Date dropdown match
       const matchDate = dateFilter === 'All' || dateStr === dateFilter;
 
       // Global Header Date Range match
       let matchHeaderDate = true;
-      if (customDateRange?.start && customDateRange?.end && d.created_at) {
+      if (d.created_at) {
         const ts = new Date(d.created_at).getTime();
-        const startTs = new Date(customDateRange.start).getTime();
-        const endTs = new Date(customDateRange.end).getTime() + (24 * 60 * 60 * 1000 - 1);
-        matchHeaderDate = ts >= startTs && ts <= endTs;
+        if (!isNaN(ts)) {
+          matchHeaderDate = ts >= minTime && ts <= maxTime;
+        }
       }
 
       return matchSearch && matchPipeline && matchStatus && matchDate && matchHeaderDate;
     });
-  }, [rawData, search, pipelineFilter, statusFilter, dateFilter, customDateRange]);
+  }, [rawData, search, pipelineFilter, statusFilter, dateFilter, headerDatePreset, customDateRange, latestTimestamp]);
 
   // Derived KPI metrics strictly calculated from filtered subset
   const totalSourceRows = useMemo(() => filteredData.reduce((s, d) => s + (d.source_rows ?? 0), 0), [filteredData]);
@@ -240,6 +264,7 @@ export default function Volume() {
         subtitle="Track the amount of data flowing through your pipelines."
         onRefresh={loadData}
         onDateChange={handleHeaderDateChange}
+        latestTimestamp={latestTimestamp}
       />
 
       <div className="page-body">
