@@ -458,9 +458,6 @@ export default function Overview() {
               <ArrowUpRight size={13} />
               <span>{pipelineFilter !== 'All' ? `1 specific pipeline` : (hasActiveFilters ? `${filteredUniquePipelinesCount} of ${totalUniquePipelinesInSystem} registered` : `${totalUniquePipelinesInSystem} unique registered models`)}</span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color="#6366F1" data={filteredRuns.map(r => Number(r.duration || 0))} />
-            </div>
           </div>
 
           <div className="kpi-card">
@@ -474,9 +471,6 @@ export default function Overview() {
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
               <span>{totalRuns > 0 ? `${successfulRuns}/${totalRuns} runs passed` : 'No runs in selected range'}</span>
-            </div>
-            <div className="sparkline-container">
-              <SparkLine color="#10B981" data={filteredRuns.map(r => ((r.status || '').toLowerCase() === 'success' ? 100 : 0))} />
             </div>
           </div>
 
@@ -492,9 +486,6 @@ export default function Overview() {
               {failedRuns > 0 ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
               <span>{failedRuns > 0 ? `${failedRuns} execution failures` : '0 failures'}</span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color={failedRuns > 0 ? '#EF4444' : '#10B981'} data={filteredRuns.map(r => ((r.status || '').toLowerCase() === 'failed' ? 100 : 0))} />
-            </div>
           </div>
 
           <div className="kpi-card">
@@ -509,9 +500,6 @@ export default function Overview() {
               <ArrowUpRight size={13} />
               <span>{totalRuns > 0 ? `${avgDurationSec}s average runtime` : 'No runs in selected range'}</span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color="#3B82F6" data={filteredRuns.map(r => Number(r.duration || 0))} />
-            </div>
           </div>
 
           <div className="kpi-card">
@@ -525,9 +513,6 @@ export default function Overview() {
             <div className={`kpi-delta ${filteredIncidents.length > 0 ? 'down' : 'up'}`}>
               {filteredIncidents.length > 0 ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
               <span>{filteredIncidents.length > 0 ? `${filteredIncidents.length} requiring attention` : 'All healthy in range'}</span>
-            </div>
-            <div className="sparkline-container">
-              <SparkLine color={filteredIncidents.length > 0 ? '#EF4444' : '#10B981'} data={filteredIncidents.map((_, i) => i + 1)} />
             </div>
           </div>
         </div>

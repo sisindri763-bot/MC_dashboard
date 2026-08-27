@@ -193,9 +193,6 @@ export default function ObsOverview() {
             <div className="kpi-delta up" style={{ marginTop: 4 }}>
               <span>{freshnessSummary.fresh_count}/{totalFreshness} assets compliant</span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color={freshnessPillar.value > 50 ? '#10B981' : '#EF4444'} />
-            </div>
           </div>
 
           <div className="kpi-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/observability/volume')}>
@@ -214,9 +211,6 @@ export default function ObsOverview() {
             <div className="kpi-delta up" style={{ marginTop: 4 }}>
               <span>{totalVolumeRows.toLocaleString()} rows monitored</span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color="#3B82F6" />
-            </div>
           </div>
 
           <div className="kpi-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/observability/volume')}>
@@ -229,9 +223,6 @@ export default function ObsOverview() {
             <div className="kpi-value">{volumeData.length}</div>
             <div className="kpi-delta up" style={{ marginTop: 4 }}>
               <span>Total validation runs</span>
-            </div>
-            <div className="sparkline-container">
-              <SparkLine color="#6366F1" />
             </div>
           </div>
 
@@ -251,9 +242,6 @@ export default function ObsOverview() {
             <div className="kpi-delta down" style={{ marginTop: 4 }}>
               <span>{qualitySummary.failed_checks} failed test checks</span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color={qualityPillar.value > 50 ? '#10B981' : '#EF4444'} />
-            </div>
           </div>
 
           <div className="kpi-card" style={{ cursor: 'pointer' }} onClick={() => navigate('/observability/schema')}>
@@ -271,9 +259,6 @@ export default function ObsOverview() {
             </div>
             <div className="kpi-delta up" style={{ marginTop: 4 }}>
               <span>{schemaSummary.monitored} datasets tracked</span>
-            </div>
-            <div className="sparkline-container">
-              <SparkLine color="#F59E0B" />
             </div>
           </div>
         </div>

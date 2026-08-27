@@ -123,9 +123,6 @@ export default function Logs() {
                 <ArrowUpRight size={12} />
                 <span>Live backend logs</span>
               </div>
-              <div className="sparkline-container">
-                <SparkLine color="#6366F1" />
-              </div>
             </div>
 
             <div className="kpi-card">
@@ -139,9 +136,6 @@ export default function Logs() {
               <div className="kpi-delta down">
                 <ArrowUpRight size={12} />
                 <span>Errors flagged</span>
-              </div>
-              <div className="sparkline-container">
-                <SparkLine color="#EF4444" />
               </div>
             </div>
 
@@ -157,9 +151,6 @@ export default function Logs() {
                 <ArrowUpRight size={12} />
                 <span>Healthy runs</span>
               </div>
-              <div className="sparkline-container">
-                <SparkLine color="#10B981" />
-              </div>
             </div>
 
             <div className="kpi-card">
@@ -173,9 +164,6 @@ export default function Logs() {
               <div className="kpi-delta up">
                 <ArrowDownRight size={12} />
                 <span>Across executions</span>
-              </div>
-              <div className="sparkline-container">
-                <SparkLine color="#3B82F6" />
               </div>
             </div>
           </div>

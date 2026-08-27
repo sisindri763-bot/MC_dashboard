@@ -360,9 +360,6 @@ export default function Pipelines() {
                   : (hasActiveFilters ? `${filteredUniquePipelinesCount} of ${totalUniquePipelinesInSystem} pipelines` : `${totalUniquePipelinesInSystem} unique models`)}
               </span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color="#6366F1" data={sparkDuration} />
-            </div>
           </div>
 
           {/* Card 2: Success Rate */}
@@ -377,9 +374,6 @@ export default function Pipelines() {
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
               <span>{successfulRuns}/{totalRuns} runs passed</span>
-            </div>
-            <div className="sparkline-container">
-              <SparkLine color="#10B981" data={sparkSuccess} />
             </div>
           </div>
 
@@ -400,9 +394,6 @@ export default function Pipelines() {
                   : (hasActiveFilters ? `${totalRuns} matching active filter` : `${runs.length} all recorded runs`)}
               </span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color="#3B82F6" data={sparkDuration} />
-            </div>
           </div>
 
           {/* Card 4: Failed Runs */}
@@ -418,9 +409,6 @@ export default function Pipelines() {
               {failedRuns > 0 ? <ArrowDownRight size={13} /> : <ArrowUpRight size={13} />}
               <span>{failedRuns > 0 ? `${failedRuns} execution failures` : '0 failures'}</span>
             </div>
-            <div className="sparkline-container">
-              <SparkLine color={failedRuns > 0 ? '#EF4444' : '#10B981'} data={sparkFailed} />
-            </div>
           </div>
 
           {/* Card 5: Avg Duration */}
@@ -435,9 +423,6 @@ export default function Pipelines() {
             <div className="kpi-delta up">
               <ArrowUpRight size={13} />
               <span>{totalRuns > 0 ? `${avgDurationSec}s average runtime` : 'No runs in scope'}</span>
-            </div>
-            <div className="sparkline-container">
-              <SparkLine color="#F59E0B" data={sparkDuration} />
             </div>
           </div>
         </div>
